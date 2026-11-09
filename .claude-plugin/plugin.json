@@ -1,0 +1,35 @@
+{
+  "name": "loose-ends",
+  "version": "0.3.2",
+  "description": "Pins the questions and tasks Claude left for you, word for word, beside the chat, without changing how Claude works",
+  "author": { "name": "RikoAppDev" },
+  "license": "MIT",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language of the panel",
+      "description": "Language of the panel's labels; questions always show as Claude wrote them. auto follows the language of each question or task; en or sk fixes one for everything",
+      "options": ["auto", "en", "sk"],
+      "default": "auto"
+    },
+    "model": {
+      "type": "string",
+      "title": "Model that spots questions",
+      "description": "Alias or id of the small model that finds questions in Claude's replies",
+      "default": "haiku"
+    },
+    "autoOpen": {
+      "type": "boolean",
+      "title": "Open the panel on a new question",
+      "description": "Docks the panel when a new question arrives, in the fullscreen layout on a wide terminal",
+      "default": true
+    },
+    "keepDoneHours": {
+      "type": "number",
+      "title": "Hours to keep answered questions",
+      "description": "Answered and dropped questions leave the panel after this many hours, or at a release",
+      "default": 24
+    }
+  }
+}

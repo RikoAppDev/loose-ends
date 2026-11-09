@@ -1,0 +1,6 @@
+{
+  "name": "loose-ends",
+  "description": "loose-ends: the questions and tasks Claude left for you, word for word, beside the chat",
+  "owner": { "name": "RikoAppDev" },
+  "plugins": [{ "name": "loose-ends", "source": "./" }]
+}

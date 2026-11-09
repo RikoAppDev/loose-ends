@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="971" height="759" viewBox="0 0 971 759" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="14">
+<rect width="100%" height="100%" rx="10" fill="#1b1d23"/>
+<rect width="100%" height="32" rx="10" fill="#23262e"/>
+<rect y="22" width="100%" height="10" fill="#23262e"/>
+<circle cx="20" cy="16" r="6" fill="#ff5f57"/><circle cx="40" cy="16" r="6" fill="#febc2e"/><circle cx="60" cy="16" r="6" fill="#28c840"/>
+<text x="486" y="21" fill="#7c818c" font-size="12" text-anchor="middle">~/storefront — claude</text>
+<text x="22.0" y="63" fill="#7c818c" xml:space="preserve">&gt; </text>
+<text x="38.9" y="63" fill="#d4d7dd" xml:space="preserve">Fix the flaky checkout test, then clean up the</text>
+<text x="22.0" y="84" fill="#d4d7dd" xml:space="preserve">  orders API.</text>
+<text x="22.0" y="126" fill="#d4d7dd" xml:space="preserve">●</text>
+<text x="38.9" y="126" fill="#d4d7dd" xml:space="preserve">The checkout tests pass again. The flaky one</text>
+<text x="22.0" y="147" fill="#d4d7dd" xml:space="preserve">  waited on a fixed 200 ms timeout; it now waits</text>
+<text x="22.0" y="168" fill="#d4d7dd" xml:space="preserve">  for the payment mock to answer.</text>
+<text x="22.0" y="210" fill="#d4d7dd" xml:space="preserve">  Before I touch the database:</text>
+<text x="22.0" y="252" fill="#d4d7dd" xml:space="preserve">  1. Should I remove the legacy /v1/orders</text>
+<text x="22.0" y="273" fill="#d4d7dd" xml:space="preserve">     endpoint: </text>
+<text x="148.4" y="273" fill="#d4d7dd" font-weight="700" xml:space="preserve">remove it now</text>
+<text x="258.0" y="273" fill="#d4d7dd" xml:space="preserve">, or </text>
+<text x="300.2" y="273" fill="#d4d7dd" font-weight="700" xml:space="preserve">keep it until</text>
+
+<text x="64.2" y="294" fill="#d4d7dd" font-weight="700" xml:space="preserve">3.2</text>
+<text x="89.4" y="294" fill="#d4d7dd" xml:space="preserve">? I&#x27;d keep it until 3.2.</text>
+<text x="22.0" y="315" fill="#d4d7dd" xml:space="preserve">  2. Should I also rename OrderCard to</text>
+<text x="22.0" y="336" fill="#d4d7dd" xml:space="preserve">     OrderSummary in the web app? Only cosmetic.</text>
+<text x="22.0" y="378" fill="#d4d7dd" xml:space="preserve">  I&#x27;ll wait for your call on 1 before touching</text>
+<text x="22.0" y="399" fill="#d4d7dd" xml:space="preserve">  the database, and work on refunds meanwhile.</text>
+<text x="22.0" y="441" fill="#98c379" xml:space="preserve">●</text>
+<text x="38.9" y="441" fill="#d4d7dd" font-weight="700" xml:space="preserve">Bash</text>
+<text x="72.6" y="441" fill="#d4d7dd" xml:space="preserve">(make test-refunds)</text>
+<text x="38.9" y="462" fill="#7c818c" xml:space="preserve">⎿</text><text x="47.3" y="462" fill="#7c818c" xml:space="preserve">  42 passed</text>
+<text x="22.0" y="504" fill="#98c379" xml:space="preserve">●</text>
+<text x="38.9" y="504" fill="#d4d7dd" font-weight="700" xml:space="preserve">Update</text>
+<text x="89.4" y="504" fill="#d4d7dd" xml:space="preserve">(src/refunds/policy.ts)</text>
+<text x="38.9" y="525" fill="#7c818c" xml:space="preserve">⎿</text><text x="47.3" y="525" fill="#7c818c" xml:space="preserve">  Updated with 12 additions</text>
+<text x="22.0" y="567" fill="#e5935b" xml:space="preserve">✻</text>
+<text x="38.9" y="567" fill="#e5935b" xml:space="preserve">Working</text><text x="97.9" y="567" fill="#e5935b" xml:space="preserve">…</text>
+<text x="114.7" y="567" fill="#7c818c" xml:space="preserve">(3m 12s </text><text x="182.2" y="567" fill="#7c818c" xml:space="preserve">·</text><text x="190.6" y="567" fill="#7c818c" xml:space="preserve"> esc to interrupt)</text>
+<line x1="22.0" y1="604.5" x2="494.1" y2="604.5" stroke="#3a3f4b" stroke-width="1"/>
+<text x="22.0" y="630" fill="#d4d7dd" xml:space="preserve">&gt; </text>
+<line x1="22.0" y1="646.5" x2="494.1" y2="646.5" stroke="#3a3f4b" stroke-width="1"/>
+<text x="22.0" y="672" fill="#7c818c" xml:space="preserve">  esc to interrupt </text><text x="182.2" y="672" fill="#7c818c" xml:space="preserve">·</text><text x="190.6" y="672" fill="#7c818c" xml:space="preserve"> /loose-ends </text><text x="300.2" y="672" fill="#7c818c" xml:space="preserve">·</text><text x="308.6" y="672" fill="#7c818c" xml:space="preserve"> 2 questions, 1 task</text>
+<line x1="515.2" y1="48.0" x2="515.2" y2="741.0" stroke="#3a3f4b" stroke-width="1"/>
+<text x="527.8" y="63" fill="#d4d7dd" font-weight="700" xml:space="preserve">Waiting on you</text>
+<text x="839.7" y="63" fill="#f07178" xml:space="preserve">●</text><text x="848.1" y="63" fill="#f07178" xml:space="preserve"> 1</text>
+
+<text x="881.9" y="63" fill="#61afef" xml:space="preserve">○</text><text x="890.3" y="63" fill="#61afef" xml:space="preserve"> 1</text>
+
+<text x="924.0" y="63" fill="#c678dd" xml:space="preserve">◉</text><text x="932.4" y="63" fill="#c678dd" xml:space="preserve"> 1</text>
+<line x1="527.8" y1="79.5" x2="940.9" y2="79.5" stroke="#3a3f4b" stroke-width="1"/>
+<text x="527.8" y="105" fill="#d4d7dd" font-weight="700" xml:space="preserve">Questions</text>
+<text x="612.1" y="105" fill="#7c818c" xml:space="preserve">·</text><text x="620.5" y="105" fill="#7c818c" xml:space="preserve"> 2</text>
+<rect x="532.0" y="121.5" width="413.1" height="357.0" rx="6" fill="none" stroke="#f07178" stroke-width="1.2"/>
+<text x="544.7" y="147" fill="#f07178" xml:space="preserve">●</text>
+<text x="561.5" y="147" fill="#d4d7dd" font-weight="700" xml:space="preserve">1. Should I remove the legacy /v1/orders</text>
+<text x="544.7" y="168" fill="#d4d7dd" font-weight="700" xml:space="preserve">  endpoint: remove it now, or keep it until</text>
+<text x="544.7" y="189" fill="#d4d7dd" font-weight="700" xml:space="preserve">  3.2?</text>
+<text x="544.7" y="210" fill="#7c818c" xml:space="preserve">  waits on you </text><text x="671.1" y="210" fill="#7c818c" xml:space="preserve">·</text><text x="679.5" y="210" fill="#7c818c" xml:space="preserve"> 4m</text>
+<text x="544.7" y="252" fill="#7c818c" xml:space="preserve">Before I touch the database:</text>
+<text x="544.7" y="294" fill="#56b6c2" xml:space="preserve">1</text>
+<text x="553.1" y="294" fill="#d4d7dd" xml:space="preserve">: remove it now</text>
+<text x="544.7" y="315" fill="#56b6c2" xml:space="preserve">2</text>
+<text x="553.1" y="315" fill="#d4d7dd" xml:space="preserve">: keep it until 3.2  </text>
+<text x="730.1" y="315" fill="#56b6c2" font-weight="700" xml:space="preserve">◂</text><text x="738.5" y="315" fill="#56b6c2" font-weight="700" xml:space="preserve"> picked</text>
+<text x="544.7" y="357" fill="#56b6c2" xml:space="preserve">s</text>
+<text x="553.1" y="357" fill="#d4d7dd" xml:space="preserve">: Send: keep it until 3.2</text>
+<text x="544.7" y="399" fill="#7c818c" xml:space="preserve">›</text><text x="553.1" y="399" fill="#7c818c" xml:space="preserve"> answer, Enter sends it</text>
+<text x="544.7" y="441" fill="#56b6c2" xml:space="preserve">r</text>
+<text x="553.1" y="441" fill="#d4d7dd" xml:space="preserve">: Reply  </text>
+<text x="629.0" y="441" fill="#56b6c2" xml:space="preserve">e</text>
+<text x="637.4" y="441" fill="#d4d7dd" xml:space="preserve">: Explain  </text>
+<text x="730.1" y="441" fill="#56b6c2" xml:space="preserve">p</text>
+<text x="738.5" y="441" fill="#d4d7dd" xml:space="preserve">: In prompt</text>
+<text x="544.7" y="462" fill="#56b6c2" xml:space="preserve">d</text>
+<text x="553.1" y="462" fill="#d4d7dd" xml:space="preserve">: Answered  </text>
+<text x="654.2" y="462" fill="#56b6c2" xml:space="preserve">x</text>
+<text x="662.7" y="462" fill="#d4d7dd" xml:space="preserve">: Drop</text>
+<text x="527.8" y="525" fill="#61afef" xml:space="preserve">○</text>
+<text x="544.7" y="525" fill="#d4d7dd" xml:space="preserve">2. Should I also rename OrderCard to Order</text><text x="898.7" y="525" fill="#d4d7dd" xml:space="preserve">…</text>
+<text x="527.8" y="546" fill="#7c818c" xml:space="preserve">  optional </text><text x="620.5" y="546" fill="#7c818c" xml:space="preserve">·</text><text x="629.0" y="546" fill="#7c818c" xml:space="preserve"> 4m</text>
+<text x="527.8" y="588" fill="#d4d7dd" font-weight="700" xml:space="preserve">Tasks</text>
+<text x="578.4" y="588" fill="#7c818c" xml:space="preserve">·</text><text x="586.8" y="588" fill="#7c818c" xml:space="preserve"> 1</text>
+<text x="527.8" y="630" fill="#c678dd" xml:space="preserve">◉</text>
+<text x="544.7" y="630" fill="#d4d7dd" xml:space="preserve">Sign in to the staging dashboard so I can</text><text x="890.3" y="630" fill="#d4d7dd" xml:space="preserve">…</text>
+<text x="527.8" y="651" fill="#7c818c" xml:space="preserve">  your step </text><text x="629.0" y="651" fill="#7c818c" xml:space="preserve">·</text><text x="637.4" y="651" fill="#7c818c" xml:space="preserve"> waits on you </text><text x="755.4" y="651" fill="#7c818c" xml:space="preserve">·</text><text x="763.8" y="651" fill="#7c818c" xml:space="preserve"> 12m</text>
+<text x="527.8" y="693" fill="#56b6c2" xml:space="preserve">j</text>
+<text x="536.2" y="693" fill="#7c818c" xml:space="preserve">: next   </text>
+<text x="612.1" y="693" fill="#56b6c2" xml:space="preserve">k</text>
+<text x="620.5" y="693" fill="#7c818c" xml:space="preserve">: previous</text>
+<text x="527.8" y="735" fill="#7c818c" xml:space="preserve">▸</text><text x="536.2" y="735" fill="#7c818c" xml:space="preserve"> Done (3)</text>
+</svg>
