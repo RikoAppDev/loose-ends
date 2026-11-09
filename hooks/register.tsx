@@ -57,6 +57,15 @@ const tonesFor = (surface: string): Tones =>
     ? { blocking: 'red', decision: 'yellow', optional: 'blue', action: 'magenta', accent: 'cyan', ok: 'green' }
     : { blocking: 'error', decision: 'warning', optional: 'suggestion', action: 'permission', accent: 'claude', ok: 'success' }
 
+/**
+ * The answer and side-chat fields have a fixed height of several rows. A
+ * one-row field grows while the person types and drops back to one row at
+ * the next redraw (a resize), cutting the text and leaving the cursor behind;
+ * a fixed height keeps the text whole and scrolls it within.
+ */
+const ANSWER_ROWS = 3
+const ASK_ROWS = 2
+
 const GLYPH: Record<Priority, string> = { blocking: '●', decision: '◆', optional: '○' }
 const TASK_GLYPH = '◉'
 
@@ -791,6 +800,7 @@ export const register: Register = (on, options) => {
           {options(q)}
           <Input
             key={`ans:${q.id}`}
+            rows={ANSWER_ROWS}
             placeholder={`› ${isTask(q) ? L.replyHint : L.answerHint}`}
             value={drafts.get(q.id) ?? ''}
             submitLabel={L.send}
@@ -821,6 +831,7 @@ export const register: Register = (on, options) => {
           ) : null}
           <Input
             key={`ask:${q.id}`}
+            rows={ASK_ROWS}
             placeholder={`? ${L.askHint}`}
             value={asks.get(q.id) ?? ''}
             submitLabel="↵"

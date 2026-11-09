@@ -200,6 +200,9 @@ test('an answer typed in the panel is sent at once as your message, quoting the 
 
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await pane.press({ key: 'row:q1' })
+  // Fixed heights, so a long answer neither gets cut to one row nor moves the cursor on a redraw.
+  expect((await pane.find({ key: 'ans:q1' }))?.props.rows).toBe(3)
+  expect((await pane.find({ key: 'ask:q1' }))?.props.rows).toBe(2)
   await pane.input({ key: 'ans:q1', text: 'áno, zmraz ho' })
   await clock.advance(10)
 
