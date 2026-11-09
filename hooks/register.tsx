@@ -10,6 +10,7 @@ import {
   buildExtractPrompt,
   buildResolvePrompt,
   clip,
+  commandsFor,
   commandsIn,
   compactSent,
   contextFor,
@@ -310,6 +311,7 @@ async function flush($: EngineInterface, isFinal: boolean): Promise<void> {
     fresh.push({
       quote,
       context: contextFor(text, quote),
+      ...(item.kind === 'action' ? { commands: commandsFor(text, quote) } : {}),
       options,
       ...(at >= 0 ? { recommended: at } : {}),
       priority: item.priority,
@@ -335,7 +337,16 @@ async function flush($: EngineInterface, isFinal: boolean): Promise<void> {
       }
       const again = askedAgain.get(q.id)
       const quote = again === undefined ? null : findVerbatim(text, again)
-      if (quote !== null) return { ...q, quote, context: contextFor(text, quote), rowId: rowOf(quote), askedAgainAt: now }
+      if (quote !== null) {
+        return {
+          ...q,
+          quote,
+          context: contextFor(text, quote),
+          ...(isTask(q) ? { commands: commandsFor(text, quote) } : {}),
+          rowId: rowOf(quote),
+          askedAgainAt: now,
+        }
+      }
       return q
     })
     const added: Question[] = []
@@ -740,7 +751,7 @@ export const register: Register = (on, options) => {
 
     const actions = (q: Question) => {
       const L = labelsFor(q)
-      const commands = isTask(q) ? commandsIn(`${q.quote}\n\n${q.context}`) : []
+      const commands = isTask(q) ? (q.commands ?? commandsIn(q.quote)) : []
       return (
         <Box flexDirection="column" rowGap={1}>
           {commands.length > 0 ? (

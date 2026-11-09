@@ -126,24 +126,63 @@ export const findVerbatim = (text: string, wanted: string): string | null => {
 }
 
 /**
- * What Claude wrote around the question, without the question itself, which
- * the panel already shows: the paragraph before it, and the rest of its own
- * paragraph.
+ * The paragraph at `from`, and when it opens a fenced code block that a blank
+ * line split, the paragraphs up to the fence that closes it.
  */
-export const contextFor = (text: string, quote: string): string => {
+const followingBlock = (paragraphs: readonly string[], from: number): string => {
+  const first = paragraphs[from] ?? ''
+  const fence = /^(```|~~~)/.exec(first)?.[1]
+  if (fence === undefined || (first.split('\n').length > 1 && first.trimEnd().endsWith(fence))) return first
+  const block = [first]
+  for (let at = from + 1; at < paragraphs.length; at += 1) {
+    block.push(paragraphs[at] ?? '')
+    if ((paragraphs[at] ?? '').trimEnd().endsWith(fence)) break
+  }
+  return block.join('\n\n')
+}
+
+const isCodeBlock = (paragraph: string): boolean => /^(```|~~~)/.test(paragraph) || /(```|~~~)\s*$/.test(paragraph)
+
+type Around = { before: string; rest: string; after: string }
+
+/**
+ * What Claude wrote around the question, each part '' when left out:
+ * - `before`, the paragraph before it, unless that is a code block, which
+ *   belongs to whatever came before;
+ * - `rest`, the rest of its own paragraph;
+ * - `after`, the paragraph after it when the question announces it (it ends
+ *   with a colon) or that paragraph is a code block, such as the command a
+ *   task asks the person to run.
+ */
+const around = (text: string, quote: string): Around | null => {
   const paragraphs = text.split(/\n\s*\n/).map(p => p.trim()).filter(p => p.length > 0)
   const key = norm(quote).slice(0, 80)
   const at = paragraphs.findIndex(p => norm(p).includes(key))
-  if (at < 0) return ''
+  if (at < 0) return null
   const own = paragraphs[at] ?? ''
   const before = at > 0 ? (paragraphs[at - 1] ?? '') : ''
   const rest = own.includes(quote) ? own.replace(quote, ' ').replace(/[ \t]{2,}/g, ' ').trim() : ''
-  const parts = [
-    ...(before.length > 0 && before.length < 900 ? [before] : []),
-    ...(rest.replace(/[\s\p{P}]/gu, '').length >= 12 ? [rest] : []),
-  ]
-  const context = parts.join('\n\n')
+  const after = followingBlock(paragraphs, at + 1)
+  const isAnnounced = /[:：]\s*$/.test(own) || /^(```|~~~)/.test(after)
+  return {
+    before: before.length > 0 && before.length < 900 && !isCodeBlock(before) ? before : '',
+    rest: rest.replace(/[\s\p{P}]/gu, '').length >= 12 ? rest : '',
+    after: isAnnounced && after.length < 1200 ? after : '',
+  }
+}
+
+/** What Claude wrote around the question, without the question itself, which the panel already shows. */
+export const contextFor = (text: string, quote: string): string => {
+  const parts = around(text, quote)
+  if (parts === null) return ''
+  const context = [parts.before, parts.rest, parts.after].filter(part => part.length > 0).join('\n\n')
   return context.length > 1600 ? context.slice(0, 1599) + '…' : context
+}
+
+/** The commands a task offers to copy: those in the task itself and in what follows it, never in what came before. */
+export const commandsFor = (text: string, quote: string): string[] => {
+  const parts = around(text, quote)
+  return commandsIn([quote, parts?.rest ?? '', parts?.after ?? ''].join('\n\n'))
 }
 
 const cellsOf = (row: string): string[] =>
@@ -265,7 +304,7 @@ kind: "action" for a task, even one phrased as a request ("try X, then tell me h
 lang: the ISO 639-1 code of the language the quote itself is written in ("en", "sk", "de", ...), judged from the quote alone: the same text may switch languages from one ask to the next. Words without diacritics still count as their language.
 
 resolved: ids from OPEN ASKS that the new text shows are settled: the agent says the person answered it, the agent did or decided it, or it no longer applies. A mention of the same topic is not enough. note: a short phrase copied from the new text that shows it.
-repeats: an ask in the new text that is the same as one in OPEN ASKS, asked again and maybe reworded: its id and the new quote copied exactly. Do not put it in "new" as well.
+repeats: an ask in the new text that is the same as one in OPEN ASKS, asked again and maybe reworded: its id and the new quote copied exactly. Do not put it in "new" as well. Judge sameness by what the person is asked to decide or do, using what was around each ask: the same command or decision asked again in other words is a repeat.
 
 Empty lists when there is nothing.`
 
@@ -273,10 +312,14 @@ export const RESOLVE_SYSTEM = `You read a message a person sent to an AI coding 
 
 An ask is answered when the message gives the decision, the approval or the information, says the step is done, or says to drop, skip or postpone it. Numbered replies such as "1 yes, 2 later" refer to the numbering in the agent's last message, given below. answer: the part of the person's message that answers it, copied exactly. When unsure, leave the ask out. {"answered":[]} when the message answers none.`
 
+/** An open ask as the small model sees it: its quote, and a little of what was around it, so a repeat is told apart. */
+const openAsk = (q: Question): string =>
+  q.context ? `${q.id}: ${cut(q.quote, 400)}\n    around it: ${cut(q.context, 240)}` : `${q.id}: ${cut(q.quote, 400)}`
+
 export const buildExtractPrompt = (open: readonly Question[], text: string): string =>
   [
     'OPEN ASKS:',
-    open.length === 0 ? '(none)' : open.map(q => `${q.id}: ${cut(q.quote, 400)}`).join('\n'),
+    open.length === 0 ? '(none)' : open.map(openAsk).join('\n'),
     '',
     'NEW TEXT FROM THE AGENT:',
     '<<<',

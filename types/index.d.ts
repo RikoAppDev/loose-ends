@@ -16,6 +16,8 @@ export type Question = {
   kind: AskKind
   /** The language Claude wrote it in, an ISO 639-1 code; the panel's labels for it follow it. */
   lang?: string
+  /** For a task, the commands it offers to copy, from the task and what follows it. */
+  commands?: string[]
   status: Status
   askedAt: number
   askedAgainAt?: number

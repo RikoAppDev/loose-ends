@@ -2,6 +2,8 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import {
   RELEASE,
+  buildExtractPrompt,
+  commandsFor,
   commandsIn,
   compactSent,
   contextFor,
@@ -134,6 +136,61 @@ describe('the rest of extraction', () => {
     )
     const bare = 'Nasadené na staging.\n\nSkús prihlásenie a daj mi vedieť, ako to šlo.'
     expect(contextFor(bare, 'Skús prihlásenie a daj mi vedieť, ako to šlo.')).toBe('Nasadené na staging.')
+  })
+
+  test('a task that announces its command keeps the command in its context, ready to copy', () => {
+    const reply = [
+      'The v1.2.0 release is out.',
+      '',
+      'Only v1.2.1 is missing, run this command:',
+      '',
+      '```',
+      '! gh release create v1.2.1 --latest',
+      '```',
+      '',
+      'Then the newest release is marked latest.',
+    ].join('\n')
+    const quote = 'Only v1.2.1 is missing, run this command:'
+    expect(contextFor(reply, quote)).toBe('The v1.2.0 release is out.\n\n```\n! gh release create v1.2.1 --latest\n```')
+    expect(commandsFor(reply, quote)).toEqual(['! gh release create v1.2.1 --latest'])
+
+    const split = 'Run this:\n\n```\nmake seed\n\nmake test\n```\n\nDone.'
+    expect(contextFor(split, 'Run this:')).toBe('```\nmake seed\n\nmake test\n```')
+  })
+
+  test('a command belongs to the task before it, not to the next task in the same reply', () => {
+    const reply = [
+      'The automatic mode stopped me again. Run it yourself:',
+      '',
+      '```',
+      '! gh release create v1.2.1 --latest',
+      '```',
+      '',
+      'Then v1.2.1 is the latest. To let me create releases myself, allow `Bash(gh release create:*)` in your settings.',
+    ].join('\n')
+    const first = 'Run it yourself:'
+    const second = 'To let me create releases myself, allow `Bash(gh release create:*)` in your settings.'
+    expect(commandsFor(reply, first)).toEqual(['! gh release create v1.2.1 --latest'])
+    expect(commandsFor(reply, second)).toEqual([])
+    expect(contextFor(reply, second)).toBe('Then v1.2.1 is the latest.')
+  })
+
+  test('the small model sees what was around each open ask, so it can tell a repeat', () => {
+    const open = [
+      {
+        id: 'q1',
+        quote: 'Run it yourself:',
+        context: '```\n! gh release create v1.2.1 --latest\n```',
+        options: [],
+        priority: 'blocking' as const,
+        kind: 'action' as const,
+        status: 'open' as const,
+        askedAt: 0,
+        rowId: 'r',
+        thread: [],
+      },
+    ]
+    expect(buildExtractPrompt(open, 'new text')).toContain('around it: ``` ! gh release create v1.2.1 --latest ```')
   })
 
   test('a table too wide for the panel becomes a list with the same words; one that fits stays', () => {
