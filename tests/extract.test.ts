@@ -3,6 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import {
   RELEASE,
   commandsIn,
+  compactSent,
   contextFor,
   draftText,
   findVerbatim,
@@ -172,6 +173,13 @@ describe('the rest of extraction', () => {
     expect(out?.resolved).toEqual([{ id: 'q2', note: 'done' }])
     expect(parseExtract('no json here')).toBeNull()
     expect(parseResolve('{"answered":[{"id":"q1","answer":"áno"}]}')).toEqual([{ id: 'q1', answer: 'áno' }])
+  })
+
+  test('an answer sent from the panel reads short in the transcript', () => {
+    const sent = draftText('**Zmrazím staging na verzii 2.4.0**, kým nedokončíš testy?\nOdporúčam áno.', 'áno')
+    expect(compactSent(sent, 40)).toBe('áno\n↳ Zmrazím staging na verzii 2.4.0, kým ne…')
+    expect(compactSent('just a message I typed')).toBeNull()
+    expect(compactSent('> a quote someone pasted')).toBeNull()
   })
 
   test('an answer drafted in the panel is found again in the sent prompt', () => {

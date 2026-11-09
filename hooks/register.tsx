@@ -11,6 +11,7 @@ import {
   buildResolvePrompt,
   clip,
   commandsIn,
+  compactSent,
   contextFor,
   cut,
   discussPrompt,
@@ -563,6 +564,14 @@ export const register: Register = (on, options) => {
     await update($, paneShown, () => false)
     return result
   }).catch(($, e, next) => next(e))
+
+  // An answer sent from the panel reads as the answer and one line naming the question; ctrl+o shows it whole.
+  on('ui.render', { component: 'UserMessage' }, ($, e, next) => {
+    const origin = e.props.origin
+    if (e.props.isExpanded || origin.kind !== 'plugin' || origin.name !== PANE) return next(e)
+    const text = compactSent(e.props.text)
+    return next(text === null ? e : { ...e, props: { ...e.props, text } })
+  })
 
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const tail = hintTail(await read($, questions))

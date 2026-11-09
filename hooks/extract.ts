@@ -230,7 +230,24 @@ export const draftText = (quote: string, answer: string): string =>
   '\n\n' +
   answer.trim()
 
-export const EXTRACT_SYSTEM = `You read what an AI coding agent wrote to a person during a long working session, and you find what the agent is waiting on the person for. You never answer the asks and you never reword them.
+/**
+ * How an answer sent from the panel reads in the transcript: the answer, and
+ * one line naming the question it answers, cut to `room` characters. Claude
+ * still receives the whole message; this only draws the row smaller. Null
+ * for any text the panel did not write.
+ */
+export const compactSent = (text: string, room = 90): string | null => {
+  const sent = /^((?:> [^\n]*\n)+)\n([\s\S]+)$/.exec(text)
+  if (sent === null) return null
+  const quote = (sent[1] ?? '')
+    .split('\n')
+    .map(line => line.replace(/^> ?/, ''))
+    .join(' ')
+  const answer = (sent[2] ?? '').trim()
+  return answer ? `${answer}\n↳ ${cut(quote, room)}` : null
+}
+
+export const EXTRACT_SYSTEM =`You read what an AI coding agent wrote to a person during a long working session, and you find what the agent is waiting on the person for. You never answer the asks and you never reword them.
 
 Answer with JSON only, no prose, in this shape:
 {"new":[{"quote":"...","options":["..."],"recommended":"...","priority":"blocking","kind":"question","lang":"en"}],"resolved":[{"id":"q1","note":"..."}],"repeats":[{"id":"q1","quote":"..."}]}

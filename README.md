@@ -68,6 +68,13 @@ An answer goes out as your own message, with the question quoted above it:
 keep it until 3.2
 ```
 
+Claude receives that whole message. The transcript draws it short, as your answer and one line naming the question; `ctrl+o` shows it in full:
+
+```
+keep it until 3.2
+↳ Should I remove the legacy /v1/orders endpoint: remove it now, or keep it until 3.2?
+```
+
 **While Claude works, a sent answer waits for the current turn to end.** To reach Claude inside a running turn, press `p` and send the answer from the prompt box, as you would any message.
 
 **The side chat** under each question runs only when you ask. It is a one-off request over the conversation as Claude last saw it. The exchange stays in the panel and never enters Claude's context.

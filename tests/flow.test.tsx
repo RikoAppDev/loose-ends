@@ -113,6 +113,10 @@ const world = (on: On, found: string = FOUND) => {
     const { Text } = $.ui.resolve(e)
     return <Text dimColor>{`${e.props.hint}${e.props.tail ?? ''}`}</Text>
   })
+  on('ui.render', { component: 'UserMessage' }, ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>{e.props.text}</Text>
+  })
   return { clock, seen }
 }
 
@@ -205,6 +209,27 @@ test('an answer typed in the panel is sent at once as your message, quoting the 
   expect((await pane.find({ key: 'done' }))?.text).toContain('Vybavené (1)')
   expect(await hintOf($.ui)).toBe('? for shortcuts · /loose-ends ✓')
   await pane.unmount()
+})
+
+test('a sent answer reads short in the transcript, whole under ctrl+o, and other rows are untouched', async ($, on) => {
+  world(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  const text = `> ${QUOTE}\n\náno, zmraz ho`
+  const row = async (origin: { kind: 'plugin'; name: string } | { kind: 'composer' }, isExpanded: boolean) => {
+    const drawn = await $.ui.mount({
+      plugin: 'loose-ends',
+      component: 'UserMessage',
+      surface: 'terminal',
+      props: { text, origin, isExpanded },
+    })
+    const shown = (await drawn.find({ text: /zmraz/ }))?.text
+    await drawn.unmount()
+    return shown
+  }
+  expect(await row({ kind: 'plugin', name: 'loose-ends' }, false)).toBe(`áno, zmraz ho\n↳ ${QUOTE}`)
+  expect(await row({ kind: 'plugin', name: 'loose-ends' }, true)).toBe(text)
+  expect(await row({ kind: 'plugin', name: 'another-plugin' }, false)).toBe(text)
+  expect(await row({ kind: 'composer' }, false)).toBe(text)
 })
 
 test('a digit only picks one of Claude’s options; Send sends it', SK, async ($, on) => {
