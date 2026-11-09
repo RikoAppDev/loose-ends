@@ -1,6 +1,6 @@
 {
   "name": "loose-ends",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Pins the questions and tasks Claude left for you, word for word, beside the chat, without changing how Claude works",
   "author": { "name": "RikoAppDev" },
   "license": "MIT",
