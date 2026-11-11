@@ -21,15 +21,22 @@ import {
   fitTables,
   hasQuestionMark,
   hasQuote,
+  isOlder,
   isOpen,
   keepOptions,
+  mergeSame,
+  nearFor,
   nextId,
   norm,
+  OLDER_AFTER,
   parseExtract,
   parseResolve,
   plain,
   proseOf,
+  quotedPart,
+  quotesAsk,
   sortOpen,
+  wholeSentences,
 } from './extract'
 import { ago, langOf, strings, uiLang } from './i18n'
 import type { Lang, Strings } from './i18n'
@@ -40,9 +47,12 @@ const KEEP_SESSIONS = 40
 const questions = atom({ plugin: 'loose-ends', key: 'questions' } as const, [], { shape: 'q-1' })
 const expanded = atom({ plugin: 'loose-ends', key: 'expanded' } as const, '')
 const showDone = atom({ plugin: 'loose-ends', key: 'showDone' } as const, false)
+const showOlder = atom({ plugin: 'loose-ends', key: 'showOlder' } as const, false)
 const busy = atom({ plugin: 'loose-ends', key: 'busy' } as const, [])
 const paneShown = atom({ plugin: 'loose-ends', key: 'paneShown' } as const, false)
 const picked = atom({ plugin: 'loose-ends', key: 'picked' } as const, '')
+const asking = atom({ plugin: 'loose-ends', key: 'asking' } as const, '')
+const full = atom({ plugin: 'loose-ends', key: 'full' } as const, '')
 
 type Row = { rowId: string; text: string }
 
@@ -64,7 +74,7 @@ const tonesFor = (surface: string): Tones =>
  * the next redraw (a resize), cutting the text and leaving the cursor behind;
  * a fixed height keeps the text whole and scrolls it within.
  */
-const ANSWER_ROWS = 3
+const ANSWER_ROWS = 2
 const ASK_ROWS = 2
 
 const GLYPH: Record<Priority, string> = { blocking: '●', decision: '◆', optional: '○' }
@@ -72,10 +82,15 @@ const TASK_GLYPH = '◉'
 
 const isTask = (q: Question): boolean => q.kind === 'action'
 
-/** The waiting asks in the order the panel lists them: questions first, then tasks, each by priority and age. */
-const ordered = (list: readonly Question[]): Question[] => {
+/**
+ * The waiting asks in the order the panel lists them: the current ones, then,
+ * when asked for, the older ones; in each, questions before tasks, each by
+ * priority and age.
+ */
+const ordered = (list: readonly Question[], withOlder = false): Question[] => {
   const open = sortOpen(list)
-  return [...open.filter(q => !isTask(q)), ...open.filter(isTask)]
+  const questionsFirst = (some: readonly Question[]) => [...some.filter(q => !isTask(q)), ...some.filter(isTask)]
+  return [...questionsFirst(open.filter(q => !isOlder(q))), ...(withOlder ? questionsFirst(open.filter(isOlder)) : [])]
 }
 
 const config = { model: 'haiku', autoOpen: true, keepDoneMs: 24 * 3_600_000, language: 'auto', lang: 'en' as Lang }
@@ -150,7 +165,7 @@ function later($: EngineInterface, job: () => Promise<void>): void {
  */
 function hintTail(list: readonly Question[]): string {
   const L = labelsOf(list)
-  const waiting = list.filter(q => q.status === 'open')
+  const waiting = list.filter(q => q.status === 'open' && !isOlder(q))
   const tasks = waiting.filter(isTask).length
   return ` · ${waiting.length > 0 ? L.hint(waiting.length - tasks, tasks) : L.hintClear}`
 }
@@ -173,7 +188,7 @@ async function setStatus($: EngineInterface, id: string, status: Status, answer?
       if (q.id !== id) return q
       if (status === 'open') {
         const { closedAt: _c, closedBy: _b, answer: _a, ...rest } = q
-        return { ...rest, status }
+        return { ...rest, status, quiet: 0 }
       }
       return {
         ...q,
@@ -201,12 +216,36 @@ async function prune($: EngineInterface): Promise<void> {
   for (const { key } of dated.slice(KEEP_SESSIONS)) await $.store.delete(key)
 }
 
+/**
+ * Once a minute: finished items older than the `keepDoneHours` setting leave
+ * the finished list. An open ask never closes because time went by, however
+ * long the work pauses; only an answer, a done step or the person closes it.
+ */
 async function expire($: EngineInterface): Promise<void> {
   const now = await $.clock.now()
   const list = await read($, questions)
-  const isStale = (q: Question) => !isOpen(q) && now - (q.closedAt ?? now) >= config.keepDoneMs
-  if (list.some(isStale)) await mutate($, current => current.filter(q => !isStale(q)))
+  const isGone = (q: Question) => !isOpen(q) && now - (q.closedAt ?? now) >= config.keepDoneMs
+  if (list.some(isGone)) await mutate($, current => current.filter(q => !isGone(q)))
   else if (list.some(isOpen)) $.ui.invalidate('ui.render')
+}
+
+/**
+ * Asks saved by an earlier version: twins merged, and any ask a build that
+ * closed asks by their age closed that way opened again, among the older ones.
+ */
+async function settleSaved($: EngineInterface): Promise<void> {
+  const list = await read($, questions)
+  const isAged = (q: Question) => q.status === 'dropped' && q.closedBy === 'age'
+  if (!list.some(isAged) && mergeSame(list).length === list.length) return
+  await mutate($, current =>
+    mergeSame(
+      current.map(q => {
+        if (!isAged(q)) return q
+        const { closedAt: _c, closedBy: _b, ...rest } = q
+        return { ...rest, status: 'open' as const, quiet: OLDER_AFTER }
+      }),
+    ),
+  )
 }
 
 async function clearDone($: EngineInterface): Promise<void> {
@@ -221,7 +260,7 @@ async function openPane($: EngineInterface, isAsked: boolean): Promise<void> {
 
 /** Unfolds the next or previous waiting ask, in the order the panel lists them. */
 async function step($: EngineInterface, by: 1 | -1): Promise<void> {
-  const order = ordered(await read($, questions)).map(q => q.id)
+  const order = ordered(await read($, questions), await read($, showOlder)).map(q => q.id)
   if (order.length === 0) return
   await update($, expanded, current => {
     const at = order.indexOf(current)
@@ -235,9 +274,24 @@ async function pick($: EngineInterface, id: string, at: number): Promise<void> {
   await update($, picked, current => (current === `${id}:${at}` ? '' : `${id}:${at}`))
 }
 
+/** Puts the cursor in one of the panel's fields; a surface that cannot only leaves a line in the debug log. */
+async function focusOn($: EngineInterface, key: string): Promise<void> {
+  try {
+    const moved = await $.ui.focus({ requestId: PANE, key })
+    if (moved.deny !== undefined) debug($, `focus ${key}: ${moved.deny}`)
+  } catch (err) {
+    debug($, `focus ${key}: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 async function reply($: EngineInterface, id: string): Promise<void> {
-  const moved = await $.ui.focus({ requestId: PANE, key: `ans:${id}` })
-  if (moved.deny !== undefined) debug($, `reply focus: ${moved.deny}`)
+  await focusOn($, `ans:${id}`)
+}
+
+/** Shows the side-chat field under an item, which is hidden until asked for, and puts the cursor in it once drawn. */
+async function openSide($: EngineInterface, id: string): Promise<void> {
+  await update($, asking, () => id)
+  $.clock.after(1, () => void focusOn($, `ask:${id}`))
 }
 
 type Surface = Parameters<EngineInterface['ui']['copy']>[0]['surface']
@@ -300,17 +354,25 @@ async function flush($: EngineInterface, isFinal: boolean): Promise<void> {
   const now = await $.clock.now()
   const rowOf = (quote: string) =>
     batch.find(row => findVerbatim(row.text, quote) !== null)?.rowId ?? batch.at(-1)?.rowId ?? ''
+  const askedAgain = new Map(out.repeats.map(r => [r.id, r.quote]))
   const fresh: Omit<Question, 'id'>[] = []
   for (const item of out.found) {
-    const quote = findVerbatim(text, item.quote)
-    if (quote === null) continue
-    if ([...open, ...fresh].some(q => norm(q.quote) === norm(quote))) continue
+    const found = findVerbatim(text, item.quote)
+    if (found === null) continue
+    const quote = wholeSentences(text, found)
+    const same = open.find(q => norm(q.quote) === norm(quote))
+    if (same !== undefined) {
+      if (!askedAgain.has(same.id)) askedAgain.set(same.id, quote)
+      continue
+    }
+    if (fresh.some(q => norm(q.quote) === norm(quote))) continue
     const options = keepOptions(text, item.options)
     const recommended = item.recommended ? findVerbatim(text, item.recommended) : null
     const at = recommended === null ? -1 : options.findIndex(o => norm(o) === norm(recommended))
     fresh.push({
       quote,
       context: contextFor(text, quote),
+      near: nearFor(text, quote),
       ...(item.kind === 'action' ? { commands: commandsFor(text, quote) } : {}),
       options,
       ...(at >= 0 ? { recommended: at } : {}),
@@ -319,13 +381,13 @@ async function flush($: EngineInterface, isFinal: boolean): Promise<void> {
       ...(item.lang ? { lang: item.lang } : {}),
       status: 'open',
       askedAt: now,
+      quiet: 0,
       rowId: rowOf(quote),
       thread: [],
     })
   }
 
   const settled = new Map(out.resolved.map(r => [r.id, r.note]))
-  const askedAgain = new Map(out.repeats.map(r => [r.id, r.quote]))
   if (fresh.length === 0 && settled.size === 0 && askedAgain.size === 0) return
 
   await mutate($, list => {
@@ -336,22 +398,25 @@ async function flush($: EngineInterface, isFinal: boolean): Promise<void> {
         return { ...q, status: 'answered' as const, closedAt: now, closedBy: 'agent' as const, answer: note }
       }
       const again = askedAgain.get(q.id)
-      const quote = again === undefined ? null : findVerbatim(text, again)
-      if (quote !== null) {
+      const found = again === undefined ? null : findVerbatim(text, again)
+      if (found !== null) {
+        const quote = wholeSentences(text, found)
         return {
           ...q,
           quote,
           context: contextFor(text, quote),
+          near: nearFor(text, quote),
           ...(isTask(q) ? { commands: commandsFor(text, quote) } : {}),
           rowId: rowOf(quote),
           askedAgainAt: now,
+          quiet: 0,
         }
       }
       return q
     })
     const added: Question[] = []
     for (const item of fresh) added.push({ ...item, id: nextId([...kept, ...added]) })
-    return [...kept, ...added]
+    return mergeSame([...kept, ...added])
   })
 
   if (fresh.length > 0) {
@@ -364,6 +429,9 @@ async function resolveFrom($: EngineInterface, text: string): Promise<void> {
   const list = await read($, questions)
   const open = list.filter(q => q.status === 'open')
   if (open.length === 0 && !list.some(q => q.status === 'drafted')) return
+
+  const { quoted, rest } = quotedPart(text)
+  const byQuote = new Set(open.filter(q => quotesAsk(quoted, q)).map(q => q.id))
 
   let answered: { id: string; answer: string }[] = []
   if (open.length > 0) {
@@ -384,16 +452,17 @@ async function resolveFrom($: EngineInterface, text: string): Promise<void> {
       if (q.status === 'drafted') {
         if (hasQuote(text, q.quote)) return { ...q, status: 'answered' as const, closedAt: now, closedBy: 'you' as const }
         const { answer: _a, ...rest } = q
-        return { ...rest, status: 'open' as const }
+        return { ...rest, status: 'open' as const, quiet: q.quiet ?? 0 }
       }
-      const hit = q.status === 'open' ? answered.find(a => a.id === q.id) : undefined
-      if (hit === undefined) return q
+      if (q.status !== 'open') return q
+      const hit = answered.find(a => a.id === q.id)
+      if (hit === undefined && !byQuote.has(q.id)) return { ...q, quiet: (q.quiet ?? 0) + 1 }
       return {
         ...q,
         status: 'answered' as const,
         closedAt: now,
         closedBy: 'you' as const,
-        answer: findVerbatim(text, hit.answer) ?? '',
+        answer: hit === undefined ? rest : (findVerbatim(text, hit.answer) ?? ''),
       }
     }),
   )
@@ -505,6 +574,7 @@ export const register: Register = (on, options) => {
     })
     await pickLanguage($)
     await loadSaved($)
+    await settleSaved($)
     await prune($)
     $.clock.every(60_000, () => run($, () => expire($)))
     return next(e)
@@ -602,7 +672,7 @@ export const register: Register = (on, options) => {
     if (e.viewport?.isFullscreen !== undefined) isFullscreen = e.viewport.isFullscreen
     const list = await read($, questions)
     const isPaneUp = await read($, paneShown)
-    const waiting = sortOpen(list).filter(q => q.status === 'open')
+    const waiting = sortOpen(list).filter(q => q.status === 'open' && !isOlder(q))
     const top = waiting[0]
     if (e.props.hasSurvey || top === undefined || isPaneUp) return next(e)
 
@@ -632,35 +702,36 @@ export const register: Register = (on, options) => {
     const list = await read($, questions)
     const current = await read($, expanded)
     const isDoneShown = await read($, showDone)
+    const isOlderShown = await read($, showOlder)
     const thinking = await read($, busy)
     const choice = await read($, picked)
+    const askingId = await read($, asking)
+    const fullId = await read($, full)
     const now = await $.clock.now()
     const L = labelsOf(list)
     const tone = tonesFor(e.surface)
     const width = Math.max(24, e.props.bodyColumns)
     /** Cells inside an unfolded item's card: its round border and padding take four. */
     const inner = width - 4
-    const open = ordered(list)
-    const asked = open.filter(q => !isTask(q))
-    const todo = open.filter(isTask)
+    const open = ordered(list, true)
+    const fresh = open.filter(q => !isOlder(q))
+    const older = open.filter(isOlder)
+    const asked = fresh.filter(q => !isTask(q))
+    const todo = fresh.filter(isTask)
     const done = list.filter(q => !isOpen(q)).sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))
     const colorOf = (q: Question): Color => (isTask(q) ? tone.action : tone[q.priority])
     const glyphOf = (q: Question): string => (q.status === 'drafted' ? '✎' : isTask(q) ? TASK_GLYPH : GLYPH[q.priority])
-    const tagOf = (q: Question): string => {
-      const Li = labelsFor(q)
-      const what = q.status === 'drafted' ? Li.inPrompt : isTask(q) ? Li.action : Li.priority[q.priority]
-      return isTask(q) && q.status !== 'drafted' && q.priority === 'blocking' ? `${what} · ${Li.priority.blocking}` : what
-    }
-    const metaOf = (q: Question): string => `${tagOf(q)} · ${ago(now - (q.askedAgainAt ?? q.askedAt))}`
+    const ageOf = (q: Question): string => ago(now - (q.askedAgainAt ?? q.askedAt))
+    const toggle = (q: Question) => () => void update($, expanded, at => (at === q.id ? '' : q.id))
 
-    const waitingAsked = asked.filter(q => q.status === 'open')
+    const waiting = fresh.filter(q => q.status === 'open')
     const counts = [
       ...(['blocking', 'decision', 'optional'] as const).map(p => ({
         mark: GLYPH[p],
         color: tone[p],
-        n: waitingAsked.filter(q => q.priority === p).length,
+        n: waiting.filter(q => !isTask(q) && q.priority === p).length,
       })),
-      { mark: TASK_GLYPH, color: tone.action, n: todo.filter(q => q.status === 'open').length },
+      { mark: TASK_GLYPH, color: tone.action, n: waiting.filter(isTask).length },
     ].filter(c => c.n > 0)
 
     const header = (
@@ -684,9 +755,26 @@ export const register: Register = (on, options) => {
     const empty = (
       <Box flexDirection="column" marginTop={1} paddingLeft={1}>
         <Text color={tone.ok}>{`✓ ${L.allClear}`}</Text>
-        <Text dimColor>{L.emptyHint}</Text>
+        {list.length === 0 ? <Text dimColor>{L.emptyHint}</Text> : null}
       </Box>
     )
+
+    /** One line per item: its mark, its words cut to the width, and how long ago Claude asked it. */
+    const row = (q: Question, isDim = false) => {
+      const age = ageOf(q)
+      const isMuted = isDim || q.status === 'drafted'
+      return (
+        <Box flexDirection="row" justifyContent="space-between" columnGap={1}>
+          <Button key={`row:${q.id}`} plain onPress={toggle(q)}>
+            <Text color={colorOf(q)} dimColor={isMuted}>{`${glyphOf(q)} `}</Text>
+            <Text dimColor={isMuted}>{cut(plain(q.quote), Math.max(8, width - age.length - 4))}</Text>
+          </Button>
+          <Box flexShrink={0}>
+            <Text dimColor>{age}</Text>
+          </Box>
+        </Box>
+      )
+    }
 
     const section = (title: string, items: readonly Question[]) =>
       items.length === 0 ? null : (
@@ -695,23 +783,9 @@ export const register: Register = (on, options) => {
             {title}
             <Text dimColor>{` · ${items.length}`}</Text>
           </Text>
-          {items.map(q => (q.id === current ? card(q) : collapsed(q)))}
+          {items.map(q => (q.id === current ? card(q) : row(q)))}
         </Box>
       )
-
-    const collapsed = (q: Question) => (
-      <Box flexDirection="column" marginTop={1}>
-        <Button key={`row:${q.id}`} plain onPress={() => void update($, expanded, at => (at === q.id ? '' : q.id))}>
-          {q.status === 'drafted' ? (
-            <Text dimColor>{`${glyphOf(q)} `}</Text>
-          ) : (
-            <Text color={colorOf(q)}>{`${glyphOf(q)} `}</Text>
-          )}
-          <Text dimColor={q.status === 'drafted'}>{cut(plain(q.quote), width * 2 - 4)}</Text>
-        </Button>
-        <Text dimColor>{`  ${metaOf(q)}`}</Text>
-      </Box>
-    )
 
     // Each item below draws its own labels, in its own language.
     const options = (q: Question) => {
@@ -749,65 +823,128 @@ export const register: Register = (on, options) => {
       )
     }
 
-    const actions = (q: Question) => {
-      const L = labelsFor(q)
+    const copies = (q: Question) => {
       const commands = isTask(q) ? (q.commands ?? commandsIn(q.quote)) : []
+      if (commands.length === 0) return null
+      const L = labelsFor(q)
       return (
-        <Box flexDirection="column" rowGap={1}>
-          {commands.length > 0 ? (
-            <Box flexDirection="column">
-              {commands.map((command, at) => (
-                <Button
-                  key={`copy:${q.id}:${at}`}
-                  plain
-                  {...(at === 0 ? { hotkey: 'c' } : {})}
-                  label={`${L.copy}: ${cut(command, Math.max(12, width - 16))}`}
-                  onPress={() => void copyCommand($, command, e.surface, L)}
-                />
-              ))}
-            </Box>
-          ) : null}
-          <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-            {isTask(q) ? (
-              <Button key={`answered:${q.id}`} plain hotkey="d" label={L.markDone} onPress={() => void setStatus($, q.id, 'answered')} />
-            ) : null}
-            <Button key={`reply:${q.id}`} plain hotkey="r" label={L.reply} onPress={() => void reply($, q.id)} />
-            <Button key={`explain:${q.id}`} plain hotkey="e" label={L.explain} onPress={() => void discuss($, q.id, '')} />
+        <Box flexDirection="column">
+          {commands.map((command, at) => (
             <Button
-              key={`prompt:${q.id}`}
+              key={`copy:${q.id}:${at}`}
               plain
-              hotkey="p"
-              label={L.toPrompt}
-              onPress={() => void toPrompt($, q.id, drafts.get(q.id) ?? '')}
+              {...(at === 0 ? { hotkey: 'c' } : {})}
+              label={`${L.copy}: ${cut(command, Math.max(12, width - 16))}`}
+              onPress={() => void copyCommand($, command, e.surface, L)}
             />
-            {isTask(q) ? null : (
-              <Button
-                key={`answered:${q.id}`}
-                plain
-                hotkey="d"
-                label={L.markAnswered}
-                onPress={() => void setStatus($, q.id, 'answered')}
-              />
-            )}
-            <Button key={`drop:${q.id}`} plain hotkey="x" label={L.drop} onPress={() => void setStatus($, q.id, 'dropped')} />
-          </Box>
+          ))}
         </Box>
       )
     }
 
-    const card = (q: Question) => {
+    const actions = (q: Question, hasMore: boolean) => {
+      const L = labelsFor(q)
+      return (
+        <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+          <Button
+            key={`answered:${q.id}`}
+            plain
+            hotkey="d"
+            label={isTask(q) ? L.markDone : L.markAnswered}
+            onPress={() => void setStatus($, q.id, 'answered')}
+          />
+          <Button key={`drop:${q.id}`} plain hotkey="x" label={L.drop} onPress={() => void setStatus($, q.id, 'dropped')} />
+          {hasMore ? (
+            <Button
+              key={`more:${q.id}`}
+              plain
+              hotkey="m"
+              label={fullId === q.id ? L.less : L.more}
+              onPress={() => void update($, full, at => (at === q.id ? '' : q.id))}
+            />
+          ) : null}
+          <Button key={`side:${q.id}`} plain hotkey="e" label={L.ask} onPress={() => void openSide($, q.id)} />
+          <Button key={`reply:${q.id}`} plain hotkey="r" label={L.reply} onPress={() => void reply($, q.id)} />
+          <Button
+            key={`prompt:${q.id}`}
+            plain
+            hotkey="p"
+            label={L.toPrompt}
+            onPress={() => void toPrompt($, q.id, drafts.get(q.id) ?? '')}
+          />
+        </Box>
+      )
+    }
+
+    /** The side chat: what was asked and answered here, and its field once asked for. */
+    const side = (q: Question) => {
       const L = labelsFor(q)
       const isThinking = thinking.includes(q.id)
+      const isAsking = askingId === q.id
+      if (q.thread.length === 0 && !isThinking && !isAsking) return null
+      return (
+        <Box flexDirection="column" rowGap={1}>
+          {q.thread.length > 0 ? <Text dimColor>{`┄ ${L.sideChat}`}</Text> : null}
+          {q.thread.map(entry =>
+            entry.role === 'claude' ? (
+              <Box flexDirection="column">
+                <Text color={tone.accent}>{L.claude}</Text>
+                <Markdown text={fitTables(entry.text, inner)} />
+              </Box>
+            ) : (
+              <Text>
+                <Text dimColor>{`${L.you}  `}</Text>
+                {entry.text}
+              </Text>
+            ),
+          )}
+          {isThinking ? <Text dimColor>{L.thinking}</Text> : null}
+          {isAsking ? (
+            <Input
+              key={`ask:${q.id}`}
+              rows={ASK_ROWS}
+              placeholder={`? ${L.askHint}`}
+              value={asks.get(q.id) ?? ''}
+              submitLabel="↵"
+              onInput={value => {
+                asks.set(q.id, value)
+              }}
+              onSubmit={value => void discuss($, q.id, value)}
+            />
+          ) : null}
+        </Box>
+      )
+    }
+
+    /**
+     * An unfolded item: the ask whole, at most three lines of what stood
+     * around it (m shows all of it), its options, the answer field and one
+     * row of keys.
+     */
+    const card = (q: Question) => {
+      const L = labelsFor(q)
+      const near = plain(q.near ?? q.context.split(/\n\s*\n/).at(-1) ?? '')
+      const brief = cut(near, Math.max(40, inner * 3 - 6))
+      const isFull = fullId === q.id
+      const hasMore = q.context.replace(/\s+/g, ' ').trim().length > brief.length + 8
       return (
         <Box flexDirection="column" marginTop={1} borderStyle="round" borderColor={colorOf(q)} paddingX={1} rowGap={1}>
-          <Box flexDirection="column">
-            <Button key={`row:${q.id}`} plain onPress={() => void update($, expanded, () => '')}>
-              <Text color={colorOf(q)}>{`${glyphOf(q)} `}</Text>
-              <Text bold>{plain(q.quote)}</Text>
-            </Button>
-            <Text dimColor>{`  ${metaOf(q)}`}</Text>
+          <Box flexDirection="row" justifyContent="space-between" columnGap={1}>
+            <Box flexShrink={1}>
+              <Button key={`row:${q.id}`} plain onPress={toggle(q)}>
+                <Text color={colorOf(q)}>{`${glyphOf(q)} `}</Text>
+                <Text bold>{plain(q.quote)}</Text>
+              </Button>
+            </Box>
+            <Box flexShrink={0}>
+              <Text dimColor>{ageOf(q)}</Text>
+            </Box>
           </Box>
-          {q.context ? <Markdown text={fitTables(q.context, inner)} dimColor /> : null}
+          {isFull && q.context ? (
+            <Markdown text={fitTables(q.context, inner)} dimColor />
+          ) : brief ? (
+            <Text dimColor>{brief}</Text>
+          ) : null}
           {options(q)}
           <Input
             key={`ans:${q.id}`}
@@ -820,37 +957,9 @@ export const register: Register = (on, options) => {
             }}
             onSubmit={value => void send($, q.id, value)}
           />
-          {actions(q)}
-          {q.thread.length > 0 || isThinking ? (
-            <Box flexDirection="column" rowGap={1}>
-              <Text dimColor>{`┄ ${L.sideChat}`}</Text>
-              {q.thread.map(entry =>
-                entry.role === 'claude' ? (
-                  <Box flexDirection="column">
-                    <Text color={tone.accent}>{L.claude}</Text>
-                    <Markdown text={fitTables(entry.text, inner)} />
-                  </Box>
-                ) : (
-                  <Text>
-                    <Text dimColor>{`${L.you}  `}</Text>
-                    {entry.text}
-                  </Text>
-                ),
-              )}
-              {isThinking ? <Text dimColor>{L.thinking}</Text> : null}
-            </Box>
-          ) : null}
-          <Input
-            key={`ask:${q.id}`}
-            rows={ASK_ROWS}
-            placeholder={`? ${L.askHint}`}
-            value={asks.get(q.id) ?? ''}
-            submitLabel="↵"
-            onInput={value => {
-              asks.set(q.id, value)
-            }}
-            onSubmit={value => void discuss($, q.id, value)}
-          />
+          {copies(q)}
+          {actions(q, hasMore)}
+          {side(q)}
         </Box>
       )
     }
@@ -858,44 +967,53 @@ export const register: Register = (on, options) => {
     const closed = (q: Question) => {
       const L = labelsFor(q)
       const how =
-        q.status === 'dropped' ? L.dropped : q.closedBy === 'agent' ? L.settled : isTask(q) ? L.finished : L.answered
-      const said = q.answer ? ` · ${cut(plain(q.answer), Math.max(10, width - how.length - 8))}` : ''
+        q.status === 'dropped'
+          ? L.dropped
+          : q.closedBy === 'agent'
+            ? L.settled
+            : isTask(q)
+              ? L.finished
+              : L.answered
+      const room = Math.max(10, width - how.length - L.reopen.length - 10)
       return (
-        <Box flexDirection="column" paddingLeft={2}>
+        <Box flexDirection="row" justifyContent="space-between" columnGap={1} paddingLeft={1}>
           <Text dimColor>
             {q.status === 'dropped' ? <Text>{'✕ '}</Text> : <Text color={tone.ok}>{'✓ '}</Text>}
-            {cut(plain(q.quote), width * 2 - 6)}
+            {`${cut(plain(q.quote), room)} · ${how}`}
           </Text>
-          <Box flexDirection="row" paddingLeft={2} columnGap={2}>
-            <Text dimColor>{`${how}${said}`}</Text>
+          <Box flexShrink={0}>
             <Button key={`reopen:${q.id}`} plain dimColor label={L.reopen} onPress={() => void setStatus($, q.id, 'open')} />
           </Box>
         </Box>
       )
     }
 
+    const fold = (key: string, label: string, isShown: boolean, onPress: () => void) => (
+      <Button key={key} plain dimColor label={`${isShown ? '▾' : '▸'} ${label}`} onPress={onPress} />
+    )
+
     return (
       <Box flexDirection="column">
         {header}
-        {open.length === 0 ? empty : null}
+        {fresh.length === 0 ? empty : null}
         {section(L.questions, asked)}
         {section(L.tasks, todo)}
+        {older.length > 0 ? (
+          <Box flexDirection="column" marginTop={1}>
+            {fold('older', L.older(older.length), isOlderShown, () => void update($, showOlder, shown => !shown))}
+            {isOlderShown ? older.map(q => (q.id === current ? card(q) : row(q, true))) : null}
+          </Box>
+        ) : null}
+        {done.length > 0 ? (
+          <Box flexDirection="column" marginTop={older.length > 0 ? 0 : 1}>
+            {fold('done', L.done(done.length), isDoneShown, () => void update($, showDone, shown => !shown))}
+            {isDoneShown ? done.slice(0, 30).map(closed) : null}
+          </Box>
+        ) : null}
         {open.length > 1 ? (
           <Box flexDirection="row" columnGap={2} marginTop={1}>
             <Button key="next" plain dimColor hotkey="j" label={L.next} onPress={() => void step($, 1)} />
             <Button key="previous" plain dimColor hotkey="k" label={L.previous} onPress={() => void step($, -1)} />
-          </Box>
-        ) : null}
-        {done.length > 0 ? (
-          <Box flexDirection="column" marginTop={1} rowGap={1}>
-            <Button
-              key="done"
-              plain
-              dimColor
-              label={`${isDoneShown ? '▾' : '▸'} ${L.done(done.length)}`}
-              onPress={() => void update($, showDone, shown => !shown)}
-            />
-            {isDoneShown ? done.slice(0, 30).map(closed) : null}
           </Box>
         ) : null}
       </Box>

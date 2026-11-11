@@ -76,10 +76,13 @@ type World = {
   copied: string[]
 }
 
-const world = (on: On, found: string = FOUND) => {
+/** The small model's replies: one for every call, or a list taken in turn, its last one kept for any call after. */
+const world = (on: On, found: string | string[] = FOUND, stored: Record<string, unknown> = {}) => {
   const seen: World = { filled: [], asked: [], sent: [], copied: [] }
+  const replies = Array.isArray(found) ? [...found] : [found]
+  const nextReply = () => (replies.length > 1 ? (replies.shift() ?? '') : (replies[0] ?? ''))
   const clock = mock.clock(on, { now: 1_000_000 })
-  mock.store(on)
+  mock.store(on, stored)
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('turn.complete', (_, e) => ({ text: e.answer }))
   on('command.register', () => ({ value: { command: 'loose-ends' } }))
@@ -89,7 +92,7 @@ const world = (on: On, found: string = FOUND) => {
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('model.complete', (_, e) => {
     seen.asked.push(e.prompt)
-    return { value: { isAnswered: true, text: found, usage: USAGE } }
+    return { value: { isAnswered: true, text: nextReply(), usage: USAGE } }
   })
   on('ui.copy', (_, e) => {
     seen.copied.push(e.text)
@@ -137,11 +140,15 @@ test('a question in a reply is pinned word for word, and an invented one is not'
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const pane = await $.ui.mount({ ...PANE, surface })
-    expect((await pane.find({ key: 'row:q1' }))?.text).toContain(QUOTE)
-    expect(await pane.find({ text: /čaká na teba/ })).toBeDefined()
+    // Folded, an item is one line: its words cut to the pane's width.
+    const folded = (await pane.find({ key: 'row:q1' }))?.text ?? ''
+    expect(folded).toContain('Zmrazím staging na verzii 2.4.0')
+    expect(folded.includes('\n')).toBe(false)
     expect(await pane.find({ text: /old logs/ })).toBeUndefined()
 
     await pane.press({ key: 'row:q1' })
+    expect((await pane.find({ key: 'row:q1' }))?.text).toContain(QUOTE)
+    expect(await pane.find({ text: /Staging server beží na vetve main\. .* Odpovedz áno alebo nie\./ })).toBeDefined()
     expect((await pane.find({ key: 'opt:q1:0' }))?.text).toContain('áno')
     expect((await pane.find({ key: 'opt:q1:1' }))?.text).toContain('nie')
     expect(await pane.find({ key: 'opt:q1:2' })).toBeUndefined()
@@ -178,6 +185,10 @@ test('the side chat answers in the panel and adds nothing to the agent’s conve
 
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await pane.press({ key: 'row:q1' })
+  // The side-chat field stays hidden until asked for.
+  expect(await pane.find({ key: 'ask:q1' })).toBeUndefined()
+  await pane.press({ key: 'side:q1' })
+  expect((await pane.find({ key: 'ask:q1' }))?.props.rows).toBe(2)
   await pane.input({ key: 'ask:q1', text: 'Prečo ho zmraziť?' })
   await clock.advance(10)
 
@@ -200,16 +211,15 @@ test('an answer typed in the panel is sent at once as your message, quoting the 
 
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await pane.press({ key: 'row:q1' })
-  // Fixed heights, so a long answer neither gets cut to one row nor moves the cursor on a redraw.
-  expect((await pane.find({ key: 'ans:q1' }))?.props.rows).toBe(3)
-  expect((await pane.find({ key: 'ask:q1' }))?.props.rows).toBe(2)
+  // A fixed height, so a long answer neither gets cut to one row nor moves the cursor on a redraw.
+  expect((await pane.find({ key: 'ans:q1' }))?.props.rows).toBe(2)
   await pane.input({ key: 'ans:q1', text: 'áno, zmraz ho' })
   await clock.advance(10)
 
   expect(seen.sent).toEqual([{ text: `> ${QUOTE}\n\náno, zmraz ho`, asUser: true }])
   expect(seen.filled).toEqual([])
   expect(await pane.find({ key: 'row:q1' })).toBeUndefined()
-  expect((await pane.find({ key: 'done' }))?.text).toContain('Vybavené (1)')
+  expect((await pane.find({ key: 'done' }))?.text).toContain('Vybavené · 1')
   expect(await hintOf($.ui)).toBe('? for shortcuts · /loose-ends ✓')
   await pane.unmount()
 })
@@ -267,7 +277,7 @@ test('a task gets its own section, a copy button for its command, and Done', SK,
 
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect(await pane.find({ text: /Úlohy/ })).toBeDefined()
-  expect(await pane.find({ text: /tvoj krok/ })).toBeDefined()
+  expect((await pane.find({ key: 'row:q1' }))?.text).toContain('◉')
   await pane.press({ key: 'row:q1' })
   await pane.press({ key: 'copy:q1:0' })
   expect(seen.copied).toEqual(['gh auth login'])
@@ -298,14 +308,13 @@ test('in a mixed chat each item’s labels follow the language Claude wrote it i
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const pane = await $.ui.mount({ ...PANE, surface })
-    expect(await pane.find({ text: /rozhodnutie/ })).toBeDefined()
-    expect(await pane.find({ text: /your step/ })).toBeDefined()
     expect(await pane.find({ text: /Waiting on you/ })).toBeDefined()
 
     await pane.press({ key: 'row:q1' })
-    expect((await pane.find({ key: 'explain:q1' }))?.text).toContain('Vysvetli')
+    expect((await pane.find({ key: 'side:q1' }))?.text).toContain('Spýtaj sa')
+    expect((await pane.find({ key: 'answered:q1' }))?.text).toContain('Zodpovedané')
     await pane.press({ key: 'row:q2' })
-    expect((await pane.find({ key: 'explain:q2' }))?.text).toContain('Explain')
+    expect((await pane.find({ key: 'side:q2' }))?.text).toContain('Ask')
     expect((await pane.find({ key: 'answered:q2' }))?.text).toContain('Done')
     await pane.press({ key: 'row:q2' })
     await pane.unmount()
@@ -326,14 +335,158 @@ test('“In prompt” puts the question in the prompt box, and sending it from t
   await pane.press({ key: 'row:q1' })
   await pane.press({ key: 'prompt:q1' })
   expect(seen.filled).toEqual([`> ${QUOTE}\n\n`])
-  expect(await pane.find({ text: /v poli na prompt/ })).toBeDefined()
+  expect((await pane.find({ key: 'row:q1' }))?.text).toContain('✎')
   expect(seen.sent).toEqual([])
 
   await $.prompt.submit({ text: `${seen.filled[0] ?? ''}áno`, origin: { kind: 'composer' }, wait: false })
   await clock.advance(10)
 
   expect(await pane.find({ key: 'row:q1' })).toBeUndefined()
-  expect((await pane.find({ key: 'done' }))?.text).toContain('Vybavené (1)')
+  expect((await pane.find({ key: 'done' }))?.text).toContain('Vybavené · 1')
+  await pane.unmount()
+})
+
+const NONE = JSON.stringify({ new: [], resolved: [], repeats: [] })
+
+test('an ask Claude does not ask again moves to the older ones after three of your messages, and time alone never closes it', SK, async ($, on) => {
+  const { clock } = world(on, [FOUND, NONE])
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.session.append(reply(REPLY))
+  await clock.advance(9000)
+  expect(await hintOf($.ui)).toBe('? for shortcuts · /loose-ends · 1 otázka')
+
+  for (const text of ['ešte skontroluj build', 'a čo testy?', 'pokračuj']) {
+    await $.prompt.submit({ text, origin: { kind: 'composer' }, wait: false })
+    await clock.advance(10)
+  }
+  expect(await hintOf($.ui)).toBe('? for shortcuts · /loose-ends ✓')
+
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await pane.find({ text: /Nič na teba nečaká/ })).toBeDefined()
+  expect(await pane.find({ key: 'row:q1' })).toBeUndefined()
+  expect((await pane.find({ key: 'older' }))?.text).toContain('Staršie · 1')
+  await pane.press({ key: 'older' })
+  expect((await pane.find({ key: 'row:q1' }))?.text).toContain('Zmrazím staging')
+
+  // A few days away from the project: still there, still open.
+  await clock.advance(3 * 24 * 3_600_000)
+  expect((await pane.find({ key: 'older' }))?.text).toContain('Staršie · 1')
+  expect((await pane.find({ key: 'row:q1' }))?.text).toContain('Zmrazím staging')
+  expect(await pane.find({ key: 'done' })).toBeUndefined()
+  await pane.unmount()
+})
+
+test('a fresh ask stays on top however long the work pauses', SK, async ($, on) => {
+  const { clock } = world(on, [FOUND, NONE])
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.session.append(reply(REPLY))
+  await clock.advance(9000)
+  await clock.advance(5 * 24 * 3_600_000)
+  expect(await hintOf($.ui)).toBe('? for shortcuts · /loose-ends · 1 otázka')
+})
+
+test('an ask an earlier build closed for its age opens again, among the older ones', SK, async ($, on) => {
+  const saved = {
+    id: 'q1',
+    quote: QUOTE,
+    context: '',
+    options: [],
+    priority: 'blocking',
+    kind: 'question',
+    status: 'dropped',
+    askedAt: 1_000,
+    closedAt: 2_000,
+    closedBy: 'age',
+    quiet: 3,
+    rowId: 'r',
+    thread: [],
+  }
+  world(on, FOUND, { 's:session-1': { savedAt: 2_000, list: [saved] } })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await pane.find({ key: 'done' })).toBeUndefined()
+  expect((await pane.find({ key: 'older' }))?.text).toContain('Staršie · 1')
+  await pane.unmount()
+})
+
+test('Claude asking again brings an older ask back to the top', SK, async ($, on) => {
+  const again = JSON.stringify({ new: [], resolved: [], repeats: [{ id: 'q1', quote: QUOTE }] })
+  const { clock } = world(on, [FOUND, NONE, NONE, NONE, again])
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.session.append(reply(REPLY))
+  await clock.advance(9000)
+  for (const text of ['jedna', 'dva', 'tri']) {
+    await $.prompt.submit({ text, origin: { kind: 'composer' }, wait: false })
+    await clock.advance(10)
+  }
+  expect(await hintOf($.ui)).toBe('? for shortcuts · /loose-ends ✓')
+
+  await $.session.append(reply(`Ešte raz: ${REPLY}`))
+  await clock.advance(9000)
+  expect(await hintOf($.ui)).toBe('? for shortcuts · /loose-ends · 1 otázka')
+})
+
+test('a reply that quotes the question settles it, even when the model misses it', SK, async ($, on) => {
+  const { clock } = world(on, [FOUND, NONE])
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.session.append(reply(REPLY))
+  await clock.advance(9000)
+
+  await $.prompt.submit({ text: `> ${QUOTE}\n\nnie, nechaj ho`, origin: { kind: 'composer' }, wait: false })
+  await clock.advance(10)
+  expect(await hintOf($.ui)).toBe('? for shortcuts · /loose-ends ✓')
+
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await pane.press({ key: 'done' })
+  expect(await pane.find({ text: /zodpovedané/ })).toBeDefined()
+  await pane.unmount()
+})
+
+test('two asks matched to the same new words, or half a sentence each, stay one item', SK, async ($, on) => {
+  const text = [
+    'Hotovo.',
+    '',
+    'Pred nasadením treba doplniť kľúče do konfigurácie stagingu, a skontroluj, či je vypnutý príznak údržby.',
+  ].join('\n')
+  const found = JSON.stringify({
+    new: [
+      { quote: 'Pred nasadením treba doplniť kľúče do konfigurácie stagingu', options: [], priority: 'blocking', kind: 'action' },
+      { quote: 'a skontroluj, či je vypnutý príznak údržby.', options: [], priority: 'blocking', kind: 'action' },
+    ],
+    resolved: [],
+    repeats: [],
+  })
+  const { clock } = world(on, [found, NONE])
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.session.append(reply(text))
+  await $.turn.complete({ answer: text, durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.advance(400)
+  expect(await hintOf($.ui)).toBe('? for shortcuts · /loose-ends · 1 úloha')
+
+  const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 140 }, surface: 'terminal' })
+  expect((await pane.find({ key: 'row:q1' }))?.text).toContain(
+    'Pred nasadením treba doplniť kľúče do konfigurácie stagingu, a skontroluj, či je vypnutý príznak údržby.',
+  )
+  expect(await pane.find({ key: 'row:q2' })).toBeUndefined()
+  await pane.unmount()
+})
+
+test('an unfolded item shows three lines of what stood around it, and m shows all of it', SK, async ($, on) => {
+  const long = Array.from({ length: 12 }, (_, i) => `Veta číslo ${i + 1} o tom, čo sa zmenilo v buildoch a prečo.`).join(' ')
+  const text = `${long}\n\n**Zmrazím staging na verzii 2.4.0**, kým nedokončíš testy?`
+  const { clock } = world(on, [FOUND, NONE])
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.session.append(reply(text))
+  await clock.advance(9000)
+
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await pane.press({ key: 'row:q1' })
+  expect(await pane.find({ text: /Veta číslo 1 / })).toBeDefined()
+  expect(await pane.find({ text: /Veta číslo 12/ })).toBeUndefined()
+  await pane.press({ key: 'more:q1' })
+  expect(await pane.find({ text: /Veta číslo 12/ })).toBeDefined()
+  expect((await pane.find({ key: 'more:q1' }))?.text).toContain('Menej')
   await pane.unmount()
 })
 

@@ -40,22 +40,23 @@ When something waits on you, a line above the prompt names the most important it
 
 `/loose-ends` opens the panel at any time. In the fullscreen layout on a wide terminal, the panel docks beside the transcript and opens by itself when something new arrives.
 
-The panel has two sections:
+The panel has two sections, one line per item with how long ago Claude asked it:
 
 - **Questions**: decisions, approvals and information Claude asked you for.
-- **Tasks**: steps only you can take, such as signing in, running a command, or trying something and reporting back.
+- **Tasks**: steps Claude waits on you to take now, such as signing in, running a command, or trying something and reporting back. Steps in Claude's plans and checklists for later are left out.
 
-Click an item, or move to it, to unfold it. You then see the paragraph Claude wrote around it, Claude's options, and these keys:
+Click an item, or move to it, to unfold it. You then see the whole question, up to three lines of what Claude wrote around it, Claude's options, the answer field and these keys:
 
 | Key | What it does |
 | --- | --- |
 | `1`–`9` | Pick that option; `s` then sends it |
 | `r` | **Reply**: move to the answer field; `Enter` there sends what you typed |
-| `e` | **Explain**: Claude explains the item in the panel's side chat |
-| `p` | **In prompt**: put the item in the prompt box, to edit it or send it with other text |
 | `d` | **Answered**, or **Done** for a task: close it without sending anything |
-| `c` | **Copy** the command a task names |
 | `x` | **Drop**: close it as not needed |
+| `m` | **More**: everything Claude wrote around the item; `m` again folds it |
+| `e` | **Ask**: open the side chat; `Enter` on an empty field asks Claude to explain the item |
+| `p` | **In prompt**: put the item in the prompt box, to edit it or send it with other text |
+| `c` | **Copy** the command a task names |
 | `j` / `k` | Next / previous item |
 
 The keys work while the panel has the keyboard. A single stray key never sends anything: an option takes a digit to pick and `s` to send.
@@ -89,7 +90,11 @@ keep it until 3.2
 
 ### When items close
 
-An item moves to **Done** when your message answers it, when Claude says it settled it, or when you close it from the panel. Done items disappear in three cases:
+An item moves to **Done** when your message answers it, when Claude says it settled it, or when you close it from the panel. A reply that quotes the question (`> …`) closes it on its own, and so does an answer to the same question Claude asked again in other words.
+
+**Older.** Claude often moves on without saying an ask is settled. When you have sent three messages and Claude has not asked an item again, it moves to the folded **Older** group, out of the counts and the band. If Claude asks it again, it comes back to the top. Time alone changes nothing: a day away from the project leaves every item where it was, and an open item closes only when it is answered, done, or closed by you.
+
+Done items disappear in three cases:
 
 - after 24 hours (configurable);
 - at a release (`gh release create`, `git tag`, `npm publish` and the like);
@@ -104,8 +109,8 @@ An item moves to **Done** when your message answers it, when Claude says it sett
    - **With a question mark.** Text whose prose holds a question mark of any script (`?`, `？`, `؟`, Greek `;`, ...) is read after 8 seconds of quiet, while the turn still runs. Code, inline code, links and quoted lines do not count.
    - **Without one.** Any other text is read once, when the turn ends. A request such as "run this and tell me" is caught there.
 3. **Spotting.** The small model gets the text and the open questions. It answers in JSON: new asks with the language each is written in, open ones the text settled, and ones asked again.
-4. **Checking.** Code looks for every quote and option in Claude's text and keeps the text exactly as Claude wrote it. Whatever cannot be found is dropped. This works in scripts written without spaces too, and it accepts quote marks and full-width punctuation the model swapped.
-5. **Matching your answers.** When you send a prompt, the small model checks which open questions it answers. An answer sent from the panel closes its question at once.
+4. **Checking.** Code looks for every quote and option in Claude's text and keeps the text exactly as Claude wrote it. Whatever cannot be found is dropped. A quote that starts or ends inside a sentence is widened to the whole sentence, so half a sentence never stands alone, and asks that come out the same are kept once. This works in scripts written without spaces too, and it accepts quote marks and full-width punctuation the model swapped.
+5. **Matching your answers.** When you send a prompt, the small model checks which open questions it answers. A reply that quotes a question, and an answer sent from the panel, close their question at once.
 
 ## Priorities
 
@@ -114,17 +119,17 @@ An item moves to **Done** when your message answers it, when Claude says it sett
 | `●` red | Claude says it waits on you, or cannot go on without you |
 | `◆` yellow | Claude goes on, and asks you to confirm or choose |
 | `○` blue | An offer or a nice-to-have |
-| `◉` magenta | A task: a step only you can take. Its tag adds "waits on you" when Claude is blocked on it |
+| `◉` magenta | A task: a step only you can take |
 | `✎` | Put in the prompt box, not sent yet |
 
-Questions come before tasks. Within each, items Claude is blocked on come first, then the rest by priority, the oldest first.
+Questions come before tasks. Within each, items Claude is blocked on come first, then the rest by priority, the oldest first. Older items follow in their own folded group.
 
 ## What it costs and sends
 
 - **Spotting questions.** At most one small-model call at the end of each main-agent turn. Add one more for each batch with a question mark that the turn wrote and then went quiet for 8 seconds. A batch is clipped to its last 14,000 characters.
 - **Matching your answers.** One small-model call for each prompt you send while questions are open.
 - **The side chat.**
-  - It runs only when you press **Explain** or ask in the panel.
+  - It runs only when you press **Ask** and send a question, or `Enter` on an empty field for an explanation.
   - It uses the session's own model and reads the whole conversation from the prompt cache. One side question costs about as much as one turn of the main agent.
   - After a long pause or a `/model` switch the cache has lapsed, and the whole conversation is billed again.
   - Where the conversation cannot be read, it falls back to the small model with the question alone.
@@ -148,7 +153,7 @@ Questions are found and shown in any language, always in the words and language 
 
 The panel's own labels follow the language of each item, so a chat that switches between languages stays readable:
 
-- **Each item.** Its tag, buttons and fields are in the language Claude wrote that question or task in. The small model names the language while it reads the text, so this costs no extra call and works without diacritics too.
+- **Each item.** Its buttons and fields are in the language Claude wrote that question or task in. The small model names the language while it reads the text, so this costs no extra call and works without diacritics too.
 - **The panel as a whole.** The header, the band above the prompt and the hint line follow the language of what Claude asked last.
 - **Nothing known yet.** With no items, or for an item stored by an older version, the labels take Claude Code's `language` setting, then the system locale.
 

@@ -12,12 +12,20 @@ import {
   fitTables,
   hasQuestionMark,
   hasQuote,
+  isOlder,
   keepOptions,
   languageCode,
+  mergeSame,
+  nearFor,
   parseExtract,
   parseResolve,
+  quotedPart,
+  quotesAsk,
+  sortOpen,
+  wholeSentences,
 } from '../hooks/extract'
 import { langOf, uiLang } from '../hooks/i18n'
+import type { Question } from '../types'
 
 const REPLY = [
   'Staging server beží na vetve **main**. Preto by ho ďalší merge hneď nasadil.',
@@ -27,6 +35,98 @@ const REPLY = [
   '1. Mám nasadiť `2.5-rc` aj na tvoj testovací server?',
   '2. Should the API keep the old upload endpoint for a week?',
 ].join('\n')
+
+const ask = (id: string, quote: string, more: Partial<Question> = {}): Question => ({
+  id,
+  quote,
+  context: '',
+  options: [],
+  priority: 'decision',
+  kind: 'question',
+  status: 'open',
+  askedAt: 0,
+  rowId: 'r',
+  thread: [],
+  ...more,
+})
+
+describe('whole sentences', () => {
+  const line =
+    '3. **Deploy:** I build the image and you push it. Before the push, staging needs the new keys (cache and queue), and check that the "Maintenance" flag is off for `shop.example` in the admin console.'
+
+  test('half a sentence grows to the sentence it stands in', () => {
+    expect(wholeSentences(line, 'and check that the "Maintenance" flag is off for `shop.example` in the admin console.')).toBe(
+      'Before the push, staging needs the new keys (cache and queue), and check that the "Maintenance" flag is off for `shop.example` in the admin console.',
+    )
+    expect(wholeSentences(line, 'Before the push, staging needs the new keys (cache and queue)')).toBe(
+      wholeSentences(line, 'and check that the "Maintenance" flag is off for `shop.example` in the admin console.'),
+    )
+  })
+
+  test('the list number and label in front stay with the first sentence', () => {
+    expect(wholeSentences(line, 'I build the image')).toBe('3. **Deploy:** I build the image and you push it.')
+  })
+
+  test('a whole sentence, a span not in the text and a full-width mark stay as they are', () => {
+    expect(wholeSentences(REPLY, '**Zmrazím staging na verzii 2.4.0**, kým nedokončíš testy?')).toBe(
+      '**Zmrazím staging na verzii 2.4.0**, kým nedokončíš testy?',
+    )
+    expect(wholeSentences(REPLY, 'not in the text')).toBe('not in the text')
+    expect(wholeSentences('先に確認します。テストを実行してください。終わったら教えて', 'テストを実行して')).toBe(
+      'テストを実行してください。',
+    )
+  })
+})
+
+describe('one item per ask', () => {
+  test('an ask matched twice to the same words stays one item', () => {
+    const list = [
+      ask('q1', '**Ship it** today?'),
+      ask('q2', 'ship it today?'),
+      ask('q3', 'Ship it today?', { status: 'answered' }),
+      ask('q4', 'Something else?'),
+    ]
+    expect(mergeSame(list).map(q => q.id)).toEqual(['q1', 'q3', 'q4'])
+  })
+
+  test('a reply that quotes the question names it, also when it quotes only a part', () => {
+    const q = ask('q1', '1. Which branch should the nightly build use? I suggest main.')
+    const { quoted, rest } = quotedPart('> 1. Which branch should the nightly build use? I suggest main.\n\nmain')
+    expect(rest).toBe('main')
+    expect(quotesAsk(quoted, q)).toBe(true)
+    expect(quotesAsk('Which branch should the nightly build use?', q)).toBe(true)
+    expect(quotesAsk('main', q)).toBe(false)
+    expect(quotesAsk('', q)).toBe(false)
+  })
+
+  test('open asks sort by priority, then the oldest first, with drafts last', () => {
+    const list = [
+      ask('q1', 'Later?', { priority: 'optional', askedAt: 1 }),
+      ask('q2', 'Pick one?', { priority: 'decision', askedAt: 5 }),
+      ask('q3', 'Blocked here?', { priority: 'blocking', askedAt: 9 }),
+      ask('q4', 'Pick another?', { priority: 'decision', askedAt: 2 }),
+      ask('q5', 'In the box?', { priority: 'blocking', askedAt: 0, status: 'drafted' }),
+      ask('q6', 'Done?', { priority: 'blocking', status: 'answered' }),
+    ]
+    expect(sortOpen(list).map(q => q.id)).toEqual(['q3', 'q4', 'q2', 'q1', 'q5'])
+  })
+
+  test('an ask moves to the older ones after three of the person’s messages', () => {
+    expect(isOlder(ask('q1', 'A?', { quiet: 2 }))).toBe(false)
+    expect(isOlder(ask('q1', 'A?', { quiet: 3 }))).toBe(true)
+    expect(isOlder(ask('q1', 'A?', { quiet: 3, status: 'drafted' }))).toBe(false)
+    expect(isOlder(ask('q1', 'A?'))).toBe(false)
+  })
+
+  test('the lines nearest the ask come from its own paragraph first', () => {
+    const own = 'It is a medium-sized change: the cache moves to its own module and the old keys are read once.'
+    expect(nearFor(`Some background first.\n\n${own} Shall I do it in the next release?`, 'Shall I do it in the next release?')).toBe(own)
+    expect(nearFor('Some background first.\n\nIt is a small change. Shall I do it?', 'Shall I do it?')).toBe(
+      'Some background first.\n\nIt is a small change.',
+    )
+    expect(nearFor('Background paragraph here.\n\nShall I do it?', 'Shall I do it?')).toBe('Background paragraph here.')
+  })
+})
 
 describe('findVerbatim', () => {
   test('answers the agent’s own words when the model dropped the markdown', () => {

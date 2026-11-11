@@ -12,6 +12,10 @@ export type Strings = {
   allClear: string
   emptyHint: string
   done: (count: number) => string
+  older: (count: number) => string
+  more: string
+  less: string
+  ask: string
   priority: Record<Priority, string>
   action: string
   inPrompt: string
@@ -68,7 +72,11 @@ const en: Strings = {
   show: 'Show',
   allClear: 'Nothing waits on you.',
   emptyHint: 'What Claude asks you, or asks you to do, shows up here word for word.',
-  done: count => `Done (${count})`,
+  done: count => `Done · ${count}`,
+  older: count => `Older · ${count}`,
+  more: 'More',
+  less: 'Less',
+  ask: 'Ask',
   priority: { blocking: 'waits on you', decision: 'decision', optional: 'optional' },
   action: 'your step',
   inPrompt: 'in the prompt box',
@@ -129,7 +137,11 @@ const sk: Strings = {
   show: 'Ukázať',
   allClear: 'Nič na teba nečaká.',
   emptyHint: 'Na čo sa ťa Claude spýta alebo čo ťa požiada spraviť, sa tu objaví doslovne.',
-  done: count => `Vybavené (${count})`,
+  done: count => `Vybavené · ${count}`,
+  older: count => `Staršie · ${count}`,
+  more: 'Viac',
+  less: 'Menej',
+  ask: 'Spýtaj sa',
   priority: { blocking: 'čaká na teba', decision: 'rozhodnutie', optional: 'voliteľné' },
   action: 'tvoj krok',
   inPrompt: 'v poli na prompt',

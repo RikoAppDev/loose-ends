@@ -10,6 +10,8 @@ export type Question = {
   id: string
   quote: string
   context: string
+  /** The lines nearest the ask, from its own paragraph, that its card shows before `context` in full. */
+  near?: string
   options: string[]
   recommended?: number
   priority: Priority
@@ -21,8 +23,11 @@ export type Question = {
   status: Status
   askedAt: number
   askedAgainAt?: number
+  /** How many messages the person sent since Claude last asked it; at three it moves to the older ones. */
+  quiet?: number
   closedAt?: number
-  closedBy?: 'you' | 'agent'
+  /** `age` only in what one earlier build saved, which closed asks by their age; loading opens them again. */
+  closedBy?: 'you' | 'agent' | 'age'
   answer?: string
   rowId: string
   thread: ThreadEntry[]
@@ -34,9 +39,14 @@ declare module 'claude-code' {
       questions: Shaped<Question[]>
       expanded: string
       showDone: boolean
+      showOlder: boolean
       busy: string[]
       paneShown: boolean
       picked: string
+      /** The item whose card shows its side-chat field. */
+      asking: string
+      /** The item whose card shows all of its context. */
+      full: string
     }
   }
 }

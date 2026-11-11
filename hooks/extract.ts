@@ -125,6 +125,51 @@ export const findVerbatim = (text: string, wanted: string): string | null => {
   return best?.sentence ?? null
 }
 
+/** What may close a sentence after its mark: quotes, brackets and Markdown marks. */
+const CLOSERS = '["”»\'’)\\]*_`]*'
+
+/**
+ * A sentence's end: a full stop, question or exclamation mark or ellipsis
+ * after a letter (so not a list number such as `5.`) and before a space or
+ * the line's end, or a full-width mark, which needs no space after it.
+ */
+const SENTENCE_END = new RegExp(`(?<=[^\\d\\s])[.?!…]${CLOSERS}(?=\\s|$)|[。！？]${CLOSERS}`, 'gu')
+
+/**
+ * `span`, a piece of `text`, widened to the whole sentences it stands in, on
+ * its first and last line: a model that copies half a sentence ("and check
+ * that…") gets the sentence, number and label in front included. The text
+ * stays the agent's own; only where the quote starts and ends moves. A span
+ * that is not found, or that would grow by more than 300 characters, stays.
+ */
+export const wholeSentences = (text: string, span: string): string => {
+  const at = text.indexOf(span)
+  if (at < 0 || span.length === 0) return span
+  const lineStart = at === 0 ? 0 : text.lastIndexOf('\n', at - 1) + 1
+  const spanEnd = at + span.length
+  const newline = text.indexOf('\n', spanEnd)
+  const lineEnd = newline < 0 ? text.length : newline
+
+  let from = lineStart
+  for (const m of text.slice(lineStart, at).matchAll(SENTENCE_END)) from = lineStart + m.index + m[0].length
+
+  let to = spanEnd
+  if (!new RegExp(`[.?!…。！？:：]${CLOSERS}$`, 'u').test(span)) {
+    to = lineEnd
+    const lastLineStart = text.lastIndexOf('\n', spanEnd - 1) + 1
+    for (const m of text.slice(lastLineStart, lineEnd).matchAll(SENTENCE_END)) {
+      const end = lastLineStart + m.index + m[0].length
+      if (end > spanEnd) {
+        to = end
+        break
+      }
+    }
+  }
+
+  const whole = text.slice(from, to).trim()
+  return whole.length - span.length > 300 ? span : whole
+}
+
 /**
  * The paragraph at `from`, and when it opens a fenced code block that a blank
  * line split, the paragraphs up to the fence that closes it.
@@ -177,6 +222,18 @@ export const contextFor = (text: string, quote: string): string => {
   if (parts === null) return ''
   const context = [parts.before, parts.rest, parts.after].filter(part => part.length > 0).join('\n\n')
   return context.length > 1600 ? context.slice(0, 1599) + '…' : context
+}
+
+/**
+ * The lines a card shows under the ask before its full context: the rest of
+ * the ask's own paragraph when it says something (60 characters or more),
+ * else the paragraph before it followed by that rest, else what follows.
+ */
+export const nearFor = (text: string, quote: string): string => {
+  const parts = around(text, quote)
+  if (parts === null) return ''
+  if (parts.rest.length >= 60) return parts.rest
+  return [parts.before, parts.rest].filter(part => part.length > 0).join('\n\n') || parts.after
 }
 
 /** The commands a task offers to copy: those in the task itself and in what follows it, never in what came before. */
@@ -286,7 +343,7 @@ export const compactSent = (text: string, room = 90): string | null => {
   return answer ? `${answer}\n↳ ${cut(quote, room)}` : null
 }
 
-export const EXTRACT_SYSTEM =`You read what an AI coding agent wrote to a person during a long working session, and you find what the agent is waiting on the person for. You never answer the asks and you never reword them.
+export const EXTRACT_SYSTEM =`You read what an AI coding agent wrote to a person during a long working session, and you find what the agent is waiting on the person for now. You never answer the asks and you never reword them.
 
 Answer with JSON only, no prose, in this shape:
 {"new":[{"quote":"...","options":["..."],"recommended":"...","priority":"blocking","kind":"question","lang":"en"}],"resolved":[{"id":"q1","note":"..."}],"repeats":[{"id":"q1","quote":"..."}]}
@@ -294,9 +351,9 @@ Answer with JSON only, no prose, in this shape:
 What counts as an ask:
 - a question the agent puts to the person: a decision, an approval, a preference, information it lacks;
 - a task: a step only the person can take, which the work depends on or which the agent asks the person to take and report back on. Examples: run a command, sign in, approve something in a dashboard, test on a device, try something out and report back, or tell the agent once something is done. An imperative alone does not make a task: how-to tips and tidying suggestions the work does not depend on ("close the duplicate with d", "you can collapse it") are not tasks.
-What does not count: rhetorical questions; questions the agent answers itself; questions quoted from the person or anyone else; anything inside code blocks or command output; questions addressed to a subagent; an offer to go on where going on is clearly the default; status reports and summaries; tips on how to use a tool or a screen ("close it with d"); a step left to the person's own choosing or timing that the agent does not wait for ("when you open X, tell me", "if you ever want Y, do Z").
+What does not count: rhetorical questions; questions the agent answers itself; questions quoted from the person or anyone else; anything inside code blocks or command output; questions addressed to a subagent; an offer to go on where going on is clearly the default; status reports and summaries, and a remark in them that something still needs deciding when the agent does not ask the person about it (when it asks later, that question is the ask); the steps of a plan or a list of next steps, the agent's own and the person's alike, while the agent is not waiting for that step now ("3. Deploy: I build the image and you push it"); reminders and checklists for a later stage ("before the launch, the pricing page needs new copy", "once it is merged, try it on a second laptop"); tips on how to use a tool or a screen ("close it with d"); a step left to the person's own choosing or timing that the agent does not wait for ("when you open X, tell me", "if you ever want Y, do Z").
 
-quote: the ask copied exactly as it stands in the agent's text, character for character, in the same language, as a whole sentence or sentences, with any number or label in front of it. Never translate, shorten, merge or reword. One entry per separate ask, also when several sit in one numbered list. The exception is a procedure: steps the person is asked to follow one after another to do one thing ("1. do this, 2. then that") are one task, whose quote holds all of its steps in order.
+quote: the ask copied exactly as it stands in the agent's text, character for character, in the same language, as a whole sentence or sentences, never a part of one, with any number or label in front of it. Never translate, shorten, merge or reword. One entry per separate ask, also when several sit in one numbered list; two parts of one sentence are one ask, and so is the same ask said twice in the new text (quote the fuller one). The exception is a procedure: steps the person is asked to follow one after another to do one thing ("1. do this, 2. then that") are one task, whose quote holds all of its steps in order.
 options: only the choices the text itself spells out for that ask, each copied exactly; [] when it offers none. Never invent an option.
 recommended: the option, copied exactly, that the text says it recommends or will take by default; leave the field out otherwise.
 priority: "blocking" when the agent says it stops, waits or cannot go on without the answer or the step; "decision" when it goes on, or will, and asks the person to confirm or choose; "optional" for an offer or a nice-to-have.
@@ -310,7 +367,7 @@ Empty lists when there is nothing.`
 
 export const RESOLVE_SYSTEM = `You read a message a person sent to an AI coding agent and decide which of the agent's open asks it answers. Answer with JSON only: {"answered":[{"id":"q1","answer":"..."}]}
 
-An ask is answered when the message gives the decision, the approval or the information, says the step is done, or says to drop, skip or postpone it. Numbered replies such as "1 yes, 2 later" refer to the numbering in the agent's last message, given below. answer: the part of the person's message that answers it, copied exactly. When unsure, leave the ask out. {"answered":[]} when the message answers none.`
+An ask is answered when the message gives the decision, the approval or the information, says the step is done, or says to drop, skip or postpone it. Numbered replies such as "1 yes, 2 later" refer to the numbering in the agent's last message, given below. Two open asks may ask the same thing in other words, such as a remark that something needs deciding and the direct question that followed it: when the message answers one, list each of them. answer: the part of the person's message that answers it, copied exactly. When unsure, leave the ask out. {"answered":[]} when the message answers none.`
 
 /** An open ask as the small model sees it: its quote, and a little of what was around it, so a repeat is told apart. */
 const openAsk = (q: Question): string =>
@@ -330,7 +387,7 @@ export const buildExtractPrompt = (open: readonly Question[], text: string): str
 export const buildResolvePrompt = (open: readonly Question[], agentText: string, personText: string): string =>
   [
     'OPEN ASKS:',
-    open.map(q => `${q.id}: ${cut(q.quote, 400)}`).join('\n'),
+    open.map(openAsk).join('\n'),
     '',
     "THE AGENT'S LAST MESSAGE:",
     '<<<',
@@ -440,6 +497,60 @@ export const parseResolve = (reply: string): { id: string; answer: string }[] =>
 const RANK: Record<Priority, number> = { blocking: 0, decision: 1, optional: 2 }
 
 export const isOpen = (q: Question): boolean => q.status === 'open' || q.status === 'drafted'
+
+/** How many of the person's messages may go by without Claude asking again before an ask moves to the older ones. */
+export const OLDER_AFTER = 3
+
+/** An ask Claude has not asked again while the person sent three messages: still open, shown apart and folded. */
+export const isOlder = (q: Question): boolean => q.status === 'open' && (q.quiet ?? 0) >= OLDER_AFTER
+
+/** An ask that waits on the person now: open, and asked recently enough. */
+export const isCurrent = (q: Question): boolean => isOpen(q) && !isOlder(q)
+
+/**
+ * The open asks that read the same once Markdown, case and quote styles are
+ * set aside, all but the first dropped: a reworded ask matched to two old
+ * ones, or asked twice, stays one item.
+ */
+export const mergeSame = (list: readonly Question[]): Question[] => {
+  const seen = new Set<string>()
+  return list.filter(q => {
+    if (!isOpen(q)) return true
+    const key = norm(q.quote)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+/** A message split into the lines it quotes (`> …`) and the rest, which is what the person wrote. */
+export const quotedPart = (text: string): { quoted: string; rest: string } => {
+  const lines = text.split('\n')
+  const isQuoted = (line: string) => /^\s*>/.test(line)
+  return {
+    quoted: lines
+      .filter(isQuoted)
+      .map(line => line.replace(/^\s*>\s?/, ''))
+      .join('\n')
+      .trim(),
+    rest: lines
+      .filter(line => !isQuoted(line))
+      .join('\n')
+      .trim(),
+  }
+}
+
+/**
+ * Whether the lines a message quotes name this ask: they hold its start, or
+ * a long enough piece of it. A reply that quotes the question it answers
+ * settles that question without asking a model.
+ */
+export const quotesAsk = (quoted: string, q: Question): boolean => {
+  if (!quoted) return false
+  const said = norm(quoted)
+  const ask = norm(q.quote)
+  return said.includes(ask.slice(0, 60)) || (said.length >= 24 && ask.includes(said))
+}
 
 export const sortOpen = (list: readonly Question[]): Question[] =>
   list
