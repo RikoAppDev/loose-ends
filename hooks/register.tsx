@@ -93,7 +93,7 @@ const ordered = (list: readonly Question[], withOlder = false): Question[] => {
   return [...questionsFirst(open.filter(q => !isOlder(q))), ...(withOlder ? questionsFirst(open.filter(isOlder)) : [])]
 }
 
-const config = { model: 'haiku', autoOpen: true, keepDoneMs: 24 * 3_600_000, language: 'auto', lang: 'en' as Lang }
+const config = { model: 'haiku', autoOpen: false, keepDoneMs: 24 * 3_600_000, language: 'auto', lang: 'en' as Lang }
 
 let pending: Row[] = []
 let flushTimer: { cancel: () => void } | undefined
@@ -563,7 +563,7 @@ async function loadSaved($: EngineInterface): Promise<void> {
 
 export const register: Register = (on, options) => {
   config.model = typeof options.model === 'string' && options.model.trim() ? options.model.trim() : 'haiku'
-  config.autoOpen = options.autoOpen !== false
+  config.autoOpen = options.autoOpen === true
   config.keepDoneMs = Math.max(1, Number(options.keepDoneHours ?? 24) || 24) * 3_600_000
   config.language = typeof options.language === 'string' ? options.language : 'auto'
 

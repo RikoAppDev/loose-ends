@@ -1,6 +1,6 @@
 {
   "name": "loose-ends",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Pins the questions and tasks Claude left for you, word for word, beside the chat, without changing how Claude works",
   "author": { "name": "RikoAppDev" },
   "license": "MIT",
@@ -22,8 +22,8 @@
     "autoOpen": {
       "type": "boolean",
       "title": "Open the panel on a new question",
-      "description": "Docks the panel when a new question arrives, in the fullscreen layout on a wide terminal",
-      "default": true
+      "description": "Docks the panel when a new question arrives, in the fullscreen layout on a wide terminal. Off, a new question shows a notice and the hint line, and /loose-ends opens the panel",
+      "default": false
     },
     "keepDoneHours": {
       "type": "number",

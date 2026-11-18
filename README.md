@@ -38,7 +38,7 @@ When something waits on you, a line above the prompt names the most important it
 
 ![The band above the prompt and the hint line under it](docs/band.svg)
 
-`/loose-ends` opens the panel at any time. In the fullscreen layout on a wide terminal, the panel docks beside the transcript and opens by itself when something new arrives.
+`/loose-ends` opens the panel at any time; in the fullscreen layout on a wide terminal, it docks beside the transcript. By default a new item does not open it: a short notice says Claude asked something, and the band and the hint line keep showing it until you look. Turn on `autoOpen` to have the panel dock when something new arrives.
 
 The panel has two sections, one line per item with how long ago Claude asked it:
 
@@ -144,7 +144,7 @@ Set these in `/config` under loose-ends:
 | --- | --- | --- |
 | `language` | `auto` | Language of the panel's labels. `auto` follows the language of each question or task; `en` and `sk` fix one for everything |
 | `model` | `haiku` | The small model that spots questions and matches answers |
-| `autoOpen` | `true` | Open the panel when a new question arrives |
+| `autoOpen` | `false` | Dock the panel when a new question arrives, instead of only a notice |
 | `keepDoneHours` | `24` | How long answered questions stay listed |
 
 ## Languages

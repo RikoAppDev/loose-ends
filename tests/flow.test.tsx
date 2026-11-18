@@ -45,6 +45,7 @@ const BAND = {
   component: 'AbovePrompt',
   props: {
     hasSurvey: false,
+    isCollapsed: false,
     isWorking: true,
     maxRows: 10,
     bodyColumns: 100,
@@ -74,11 +75,13 @@ type World = {
   asked: string[]
   sent: { text: string; asUser: boolean }[]
   copied: string[]
+  opened: string[]
+  toasts: string[]
 }
 
 /** The small model's replies: one for every call, or a list taken in turn, its last one kept for any call after. */
 const world = (on: On, found: string | string[] = FOUND, stored: Record<string, unknown> = {}) => {
-  const seen: World = { filled: [], asked: [], sent: [], copied: [] }
+  const seen: World = { filled: [], asked: [], sent: [], copied: [], opened: [], toasts: [] }
   const replies = Array.isArray(found) ? [...found] : [found]
   const nextReply = () => (replies.length > 1 ? (replies.shift() ?? '') : (replies[0] ?? ''))
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -88,8 +91,14 @@ const world = (on: On, found: string | string[] = FOUND, stored: Record<string, 
   on('command.register', () => ({ value: { command: 'loose-ends' } }))
   on('session.id', () => ({ value: 'session-1' }))
   on('ui.log', () => ({ value: undefined }))
-  on('ui.toast', () => ({ value: undefined }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.toast', (_, e) => {
+    seen.toasts.push(e.text)
+    return { value: undefined }
+  })
+  on('ui.open', (_, e) => {
+    seen.opened.push(e.id)
+    return { value: { isPlaced: true } }
+  })
   on('model.complete', (_, e) => {
     seen.asked.push(e.prompt)
     return { value: { isAnswered: true, text: nextReply(), usage: USAGE } }
@@ -505,4 +514,32 @@ test('a request with no question mark waits for the end of the turn and is read 
 
   await clock.advance(60_000)
   expect(seen.asked.length).toBe(1)
+})
+
+/** The band drawn once in the fullscreen layout, so the mod knows a pane would dock beside the transcript. */
+const seeFullscreen = async (ui: EngineMount) => {
+  const band = await ui.mount({ ...BAND, surface: 'terminal', viewport: { columns: 200, rows: 50, isFullscreen: true } })
+  await band.unmount()
+}
+
+test('a new question shows a notice and leaves the panel shut', SK, async ($, on) => {
+  const { clock, seen } = world(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await seeFullscreen($.ui)
+  await $.session.append(reply(REPLY))
+  await clock.advance(9000)
+
+  expect(seen.toasts).toEqual(['Claude od teba niečo potrebuje'])
+  expect(seen.opened).toEqual([])
+  expect(await hintOf($.ui)).toBe('? for shortcuts · /loose-ends · 1 otázka')
+})
+
+test('with autoOpen on, a new question docks the panel', { options: { language: 'sk', autoOpen: true } }, async ($, on) => {
+  const { clock, seen } = world(on)
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await seeFullscreen($.ui)
+  await $.session.append(reply(REPLY))
+  await clock.advance(9000)
+
+  expect(seen.opened).toEqual(['loose-ends'])
 })
